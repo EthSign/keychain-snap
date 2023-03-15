@@ -1,8 +1,19 @@
-import { useContext } from "react";
-import styled from "styled-components";
-import { MetamaskActions, MetaMaskContext } from "../hooks";
-import { connectSnap, getSnap, sendGet, sendHello, sendSave, shouldDisplayReconnectButton } from "../utils";
-import { ConnectButton, InstallFlaskButton, ReconnectButton, SendHelloButton, Card } from "../components";
+import { useContext } from 'react';
+import styled from 'styled-components';
+import { MetamaskActions, MetaMaskContext } from '../hooks';
+import {
+  connectSnap,
+  getSnap,
+  sendHello,
+  shouldDisplayReconnectButton,
+} from '../utils';
+import {
+  ConnectButton,
+  InstallFlaskButton,
+  ReconnectButton,
+  SendHelloButton,
+  Card,
+} from '../components';
 
 const Container = styled.div`
   display: flex;
@@ -98,7 +109,7 @@ const Index = () => {
 
       dispatch({
         type: MetamaskActions.SetInstalled,
-        payload: installedSnap
+        payload: installedSnap,
       });
     } catch (e) {
       console.error(e);
@@ -109,24 +120,6 @@ const Index = () => {
   const handleSendHelloClick = async () => {
     try {
       await sendHello();
-    } catch (e) {
-      console.error(e);
-      dispatch({ type: MetamaskActions.SetError, payload: e });
-    }
-  };
-
-  const handleSendSaveClick = async () => {
-    try {
-      await sendSave();
-    } catch (e) {
-      console.error(e);
-      dispatch({ type: MetamaskActions.SetError, payload: e });
-    }
-  };
-
-  const handleSendGetClick = async () => {
-    try {
-      await sendGet();
     } catch (e) {
       console.error(e);
       dispatch({ type: MetamaskActions.SetError, payload: e });
@@ -150,10 +143,10 @@ const Index = () => {
         {!state.isFlask && (
           <Card
             content={{
-              title: "Install",
+              title: 'Install',
               description:
-                "Snaps is pre-release software only available in MetaMask Flask, a canary distribution for developers with access to upcoming features.",
-              button: <InstallFlaskButton />
+                'Snaps is pre-release software only available in MetaMask Flask, a canary distribution for developers with access to upcoming features.',
+              button: <InstallFlaskButton />,
             }}
             fullWidth
           />
@@ -161,9 +154,15 @@ const Index = () => {
         {!state.installedSnap && (
           <Card
             content={{
-              title: "Connect",
-              description: "Get started by connecting to and installing the example snap.",
-              button: <ConnectButton onClick={handleConnectClick} disabled={!state.isFlask} />
+              title: 'Connect',
+              description:
+                'Get started by connecting to and installing the example snap.',
+              button: (
+                <ConnectButton
+                  onClick={handleConnectClick}
+                  disabled={!state.isFlask}
+                />
+              ),
             }}
             disabled={!state.isFlask}
           />
@@ -171,35 +170,44 @@ const Index = () => {
         {shouldDisplayReconnectButton(state.installedSnap) && (
           <Card
             content={{
-              title: "Reconnect",
+              title: 'Reconnect',
               description:
-                "While connected to a local running snap this button will always be displayed in order to update the snap if a change is made.",
-              button: <ReconnectButton onClick={handleConnectClick} disabled={!state.installedSnap} />
+                'While connected to a local running snap this button will always be displayed in order to update the snap if a change is made.',
+              button: (
+                <ReconnectButton
+                  onClick={handleConnectClick}
+                  disabled={!state.installedSnap}
+                />
+              ),
             }}
             disabled={!state.installedSnap}
           />
         )}
         <Card
           content={{
-            title: "Send Hello message",
-            description: "Display a custom message within a confirmation screen in MetaMask.",
+            title: 'Send Hello message',
+            description:
+              'Display a custom message within a confirmation screen in MetaMask.',
             button: (
-              <>
-                <SendHelloButton onClick={handleSendHelloClick} disabled={!state.installedSnap} />
-                <SendHelloButton onClick={handleSendSaveClick} disabled={!state.installedSnap} />
-                <SendHelloButton onClick={handleSendGetClick} disabled={!state.installedSnap} />
-              </>
-            )
+              <SendHelloButton
+                onClick={handleSendHelloClick}
+                disabled={!state.installedSnap}
+              />
+            ),
           }}
           disabled={!state.installedSnap}
           fullWidth={
-            state.isFlask && Boolean(state.installedSnap) && !shouldDisplayReconnectButton(state.installedSnap)
+            state.isFlask &&
+            Boolean(state.installedSnap) &&
+            !shouldDisplayReconnectButton(state.installedSnap)
           }
         />
         <Notice>
           <p>
-            Please note that the <b>snap.manifest.json</b> and <b>package.json</b> must be located in the server root
-            directory and the bundle must be hosted at the location specified by the location field.
+            Please note that the <b>snap.manifest.json</b> and{' '}
+            <b>package.json</b> must be located in the server root directory and
+            the bundle must be hosted at the location specified by the location
+            field.
           </p>
         </Notice>
       </CardContainer>
