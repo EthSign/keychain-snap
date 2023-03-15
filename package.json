@@ -1,5 +1,5 @@
 {
-  "name": "@metamask/template-snap-monorepo",
+  "name": "w3ptest",
   "version": "0.1.0",
   "private": true,
   "description": "",
@@ -30,6 +30,7 @@
     "@metamask/eslint-config-jest": "^10.0.0",
     "@metamask/eslint-config-nodejs": "^10.0.0",
     "@metamask/eslint-config-typescript": "^10.0.0",
+    "@types/crypto-js": "^4.1.1",
     "@typescript-eslint/eslint-plugin": "^5.33.0",
     "@typescript-eslint/parser": "^5.33.0",
     "eslint": "^8.21.0",
@@ -46,5 +47,12 @@
   "packageManager": "yarn@3.2.1",
   "engines": {
     "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "@metamask/key-tree": "^6.2.1",
+    "async-mutex": "^0.4.0",
+    "crypto-js": "^4.1.1",
+    "ethers": "5.7.2",
+    "lodash": "^4.17.21"
   }
 }
