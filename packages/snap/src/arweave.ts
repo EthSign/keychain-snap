@@ -2,6 +2,8 @@ import { fetchTxOnArweave, postUploadToStorage } from "./misc/storage";
 import { ArweavePayload, StoragePayload } from "./types";
 import { ethers } from "ethers";
 import { EthSignKeychainState } from ".";
+import { personalSign } from "@metamask/eth-sig-util";
+import { createHash } from "crypto";
 
 export const getTransactionIdFromStorageUpload = async (
   userPublicKey: string,
@@ -10,22 +12,31 @@ export const getTransactionIdFromStorageUpload = async (
 ) => {
   // prepare message to sign before upload
   const messagePayload = {
-    address: userPublicKey,
+    publicKey: userPublicKey,
     timestamp: new Date().toISOString(),
-    version: "1.0",
-    hash: ethers.utils.hashMessage(JSON.stringify(payload))
+    version: "0.1",
+    hash: createHash("sha256")
+      .update(
+        JSON.stringify({
+          data: payload,
+          tags: [
+            { name: "PublicKey", value: userPublicKey },
+            { name: "Application", value: "EthSignKeychain" }
+          ]
+        })
+      )
+      .digest("hex")
   };
 
   // messages converted to string before sign with statement prefix
-  const message = `EthSignKeychain is signing on your behalf to validate the data being uploaded. This does not incur any gas fees.\n\n~\n\n${JSON.stringify(
+  const message = `EthSign Keychain is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
     messagePayload,
     null,
     2
   )}`;
 
   // sign signature with the messages in details
-  const wallet = new ethers.Wallet(userPrivateKey);
-  const signature = await wallet.signMessage(message);
+  const signature = personalSign({ data: message, privateKey: Buffer.from(userPrivateKey.substring(2), "hex") });
 
   // payload to upload arweave storage
   const storagePayload: StoragePayload = {
@@ -33,8 +44,8 @@ export const getTransactionIdFromStorageUpload = async (
     message,
     data: JSON.stringify(payload),
     tags: [
-      { name: "address", value: userPublicKey },
-      { name: "app", value: "EthSignKeychain" }
+      { name: "PublicKey", value: userPublicKey },
+      { name: "Application", value: "EthSignKeychain" }
     ]
   };
 
@@ -50,8 +61,8 @@ const getObjectIdFromStorage = async (userPublicKey: string) => {
     {
       transactions(sort: HEIGHT_DESC,
         tags: [
-          { name: "address", values: ["${userPublicKey}"] },
-          { name: "app", values: ["EthSignKeychain"] }
+          { name: "PublicKey", values: ["${userPublicKey}"] },
+          { name: "Application", values: ["EthSignKeychain"] }
         ]
       ) {
         edges {
