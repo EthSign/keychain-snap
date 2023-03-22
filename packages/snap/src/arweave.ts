@@ -1,16 +1,19 @@
-import { fetchTxOnArweave, postUploadToStorage } from "./misc/storage";
+import { fetchCachedTx, fetchTxOnArweave, postUploadToStorage } from "./misc/storage";
 import { ArweavePayload, StoragePayload } from "./types";
 import { ethers } from "ethers";
-import { EthSignKeychainState } from ".";
+import { decryptDataArrayFromStringAES, EthSignKeychainState, getEncryptedStringFromBuffer } from ".";
 import { personalSign } from "@metamask/eth-sig-util";
 import { createHash } from "crypto";
+import _ from "lodash";
 
 export const getTransactionIdFromStorageUpload = async (
   userPublicKey: string,
   userPrivateKey: string,
-  payload: ArweavePayload
+  type: "pwStateClear" | "pwStateDel" | "pwStateSet" | "config",
+  payload: any
 ) => {
   // prepare message to sign before upload
+  payload = getEncryptedStringFromBuffer(payload, userPrivateKey);
   const messagePayload = {
     publicKey: userPublicKey,
     timestamp: new Date().toISOString(),
@@ -18,7 +21,10 @@ export const getTransactionIdFromStorageUpload = async (
     hash: createHash("sha256")
       .update(
         JSON.stringify({
-          data: payload,
+          data: {
+            type: type,
+            payload: payload
+          },
           tags: [
             { name: "PublicKey", value: userPublicKey },
             { name: "Application", value: "EthSignKeychain" }
@@ -42,7 +48,10 @@ export const getTransactionIdFromStorageUpload = async (
   const storagePayload: StoragePayload = {
     signature,
     message,
-    data: JSON.stringify(payload),
+    data: JSON.stringify({
+      type: type,
+      payload: payload
+    }),
     tags: [
       { name: "PublicKey", value: userPublicKey },
       { name: "Application", value: "EthSignKeychain" }
@@ -57,58 +66,197 @@ export const getTransactionIdFromStorageUpload = async (
 };
 
 const getObjectIdFromStorage = async (userPublicKey: string) => {
-  const query = `
-    {
-      transactions(sort: HEIGHT_DESC,
-        tags: [
-          { name: "PublicKey", values: ["${userPublicKey}"] },
-          { name: "Application", values: ["EthSignKeychain"] }
-        ]
-      ) {
-        edges {
-          node {
-            id
-            block {
-              height
+  let ret: any = [];
+  let newCount = 1;
+  let cursor = undefined;
+  let numIterations = 0;
+  while (newCount > 0) {
+    numIterations++;
+    const query = `
+      {
+        transactions(sort: HEIGHT_DESC,
+          tags: [
+            { name: "PublicKey", values: ["${userPublicKey}"] },
+            { name: "Application", values: ["EthSignKeychain"] }
+          ],
+          first: 1${cursor ? ', after: "' + cursor + '"' : ""}
+        ) {
+          edges {
+            cursor
+            node {
+              id
+              block {
+                height
+              }
             }
           }
         }
       }
-    }
-  `;
-
-  let ret: any = undefined;
-  await fetch("https://arweave.net/graphql", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      query: query
-    })
-  })
-    .then((res) => res.json())
-    .then((response) => {
-      ret = response;
+    `;
+    newCount = await new Promise((resolve) => {
+      fetch("https://arweave.net/graphql", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          query: query
+        })
+      })
+        .then((res) => res.json())
+        .then((response) => {
+          if (response?.data?.transactions?.edges && response.data.transactions.edges.length > 0) {
+            cursor = response.data.transactions.edges[response.data.transactions.edges.length - 1].cursor;
+            ret = ret.concat(response.data.transactions.edges);
+            resolve(response.data.transactions.edges.length);
+          } else {
+            resolve(0);
+          }
+        })
+        .catch(() => resolve(0));
     });
-
-  if (ret?.transactions?.edges?.nodes?.length > 0) {
-    ret = ret.transactions.edges.nodes[0].id;
-  } else {
-    ret = undefined;
   }
 
   return ret;
 };
 
-export const getObjectFromStorage = async (userPublicKey: string): Promise<any | undefined> => {
-  const id = await getObjectIdFromStorage(userPublicKey);
-
-  if (!id) {
-    return undefined;
+export const getObjectsFromCache = async (userPublicKey: string): Promise<any | undefined> => {
+  const response: any = await fetchCachedTx(userPublicKey);
+  const objects: { cursor: string; node: { id: string; block?: { height: number }; timestamp?: number } }[] = [];
+  for (let i = 0; i < response.length; i += 2) {
+    objects.unshift({ cursor: "", node: { id: response[i], timestamp: response[i + 1] } });
   }
 
-  const file = await fetchTxOnArweave(id);
+  return objects;
+};
 
-  return file;
+export const getObjectsFromStorage = async (
+  userPublicKey: string,
+  userPrivateKey: string
+): Promise<any | undefined> => {
+  // TODO: Make sure we receive new files IN INCREASING TIMESTAMP ORDER
+
+  const nodeList: { cursor: string; node: { id: string; block?: { height: number }; timestamp?: number } }[] = (
+    await getObjectsFromCache(userPublicKey)
+  ).concat(await getObjectIdFromStorage(userPublicKey));
+
+  const state: EthSignKeychainState = {
+    config: { address: userPublicKey, encryptionMethod: "BIP-44", timestamp: 0 },
+    pendingEntries: [],
+    pwState: {},
+    address: userPublicKey,
+    timestamp: 0
+  };
+
+  if (!nodeList || nodeList.length === 0) {
+    return state;
+  }
+
+  for (const node of nodeList) {
+    const file: any = await fetchTxOnArweave(node.node.id);
+    const payload: any = decryptDataArrayFromStringAES(file.payload, userPrivateKey);
+    /**
+     * {
+     *   type: string;
+     *   payload: Object;
+     * }
+     */
+
+    // Update global state timestamp
+    if (state.timestamp < payload.timestamp) {
+      state.timestamp = payload.timestamp;
+    }
+
+    switch (file.type) {
+      case "pwStateClear":
+        /**
+         * payload: {
+         *   url: string;
+         *   timestamp: number;
+         * }
+         */
+        if (state.pwState[payload.url]) {
+          state.pwState[payload.url] = { timestamp: payload.timestamp, neverSave: true, logins: [] };
+        }
+        break;
+      case "pwStateDel":
+        /**
+         * payload: {
+         *   url: string;
+         *   username: string;
+         *   timestamp: number;
+         * }
+         */
+        if (state.pwState[payload.url]) {
+          for (let idx = 0; idx < state.pwState[payload.url].logins.length; idx++) {
+            if (state.pwState[payload.url].logins[idx].username === payload.username) {
+              state.pwState[payload.url].logins.splice(idx, 1);
+              break;
+            }
+          }
+        }
+
+        break;
+      case "pwStateSet":
+        /**
+         * payload: {
+         *   url: string;
+         *   username: string;
+         *   password: string;
+         *   timestamp: number;
+         * }
+         */
+        if (state.pwState[payload.url]) {
+          if (state.pwState[payload.url].neverSave) {
+            state.pwState[payload.url].neverSave = false;
+          }
+          let found = false;
+          for (let idx = 0; idx < state.pwState[payload.url].logins.length; idx++) {
+            if (state.pwState[payload.url].logins[idx].username === payload.username) {
+              state.pwState[payload.url].logins[idx].password = payload.password;
+              state.pwState[payload.url].timestamp = payload.timestamp;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            state.pwState[payload.url].logins.push({
+              timestamp: payload.timestamp,
+              url: payload.url,
+              username: payload.username,
+              password: payload.password,
+              address: userPublicKey
+            });
+          }
+        } else {
+          state.pwState[payload.url] = {
+            timestamp: payload.timestamp,
+            neverSave: false,
+            logins: [
+              {
+                timestamp: payload.timestamp,
+                url: payload.url,
+                username: payload.username,
+                password: payload.password,
+                address: userPublicKey
+              }
+            ]
+          };
+        }
+
+        break;
+      case "config":
+        /**
+         * payload: {
+         *   address: string;
+         *   encryptionMethod: string;
+         *   timestamp: number;
+         * }
+         */
+        state.config = payload;
+        break;
+    }
+  }
+
+  return nodeList;
 };

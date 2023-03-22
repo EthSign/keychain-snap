@@ -28,12 +28,18 @@ export const postUploadToStorage = async (data: StoragePayload): Promise<Storage
 
 export const fetchTxOnArweave = async (txId: string): Promise<ArweavePayload> => {
   let ret: any = undefined;
-  await fetch(`${REACT_APP_ETHSIGN_API_URL}/${txId}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json"
-    }
-  }).then((response: any) => (ret = response.data.transaction));
+  await fetch(`${"https://localhost:4000"}/transaction/${txId}`, {
+    method: "GET"
+  }).then((response: any) => (ret = response.json()));
+
+  return ret;
+};
+
+export const fetchCachedTx = async (userPublicKey: string): Promise<ArweavePayload> => {
+  let ret: any = undefined;
+  await fetch(`${"https://localhost:4000"}/cached/${userPublicKey}`, {
+    method: "GET"
+  }).then((response: any) => (ret = response.json()));
 
   return ret;
 };
