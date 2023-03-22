@@ -2,7 +2,16 @@ import { useContext } from "react";
 import styled from "styled-components";
 import { MetamaskActions, MetaMaskContext } from "../hooks";
 import { connectSnap, getSnap, sendGet, sendRemove, sendSet, sendSync, shouldDisplayReconnectButton } from "../utils";
-import { ConnectButton, InstallFlaskButton, ReconnectButton, SendHelloButton, Card } from "../components";
+import {
+  ConnectButton,
+  InstallFlaskButton,
+  ReconnectButton,
+  Card,
+  SendRemoveButton,
+  SendSaveButton,
+  SendGetButton,
+  SendSyncButton
+} from "../components";
 
 const Container = styled.div`
   display: flex;
@@ -100,6 +109,15 @@ const Index = () => {
         type: MetamaskActions.SetInstalled,
         payload: installedSnap
       });
+
+      // Sync with remote on install
+      try {
+        if (installedSnap) {
+          handleSendSyncClick();
+        }
+      } catch (err) {
+        console.log(err);
+      }
     } catch (e) {
       console.error(e);
       dispatch({ type: MetamaskActions.SetError, payload: e });
@@ -194,10 +212,10 @@ const Index = () => {
             description: "Display a custom message within a confirmation screen in MetaMask.",
             button: (
               <>
-                <SendHelloButton onClick={handleSendRemoveClick} disabled={!state.installedSnap} />
-                <SendHelloButton onClick={handleSendSaveClick} disabled={!state.installedSnap} />
-                <SendHelloButton onClick={handleSendGetClick} disabled={!state.installedSnap} />
-                <SendHelloButton onClick={handleSendSyncClick} disabled={!state.installedSnap} />
+                <SendRemoveButton onClick={handleSendRemoveClick} disabled={!state.installedSnap} />
+                <SendSaveButton onClick={handleSendSaveClick} disabled={!state.installedSnap} />
+                <SendGetButton onClick={handleSendGetClick} disabled={!state.installedSnap} />
+                <SendSyncButton onClick={handleSendSyncClick} disabled={!state.installedSnap} />
               </>
             )
           }}

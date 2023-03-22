@@ -29,12 +29,14 @@ export interface EthSignKeychainState extends EthSignKeychainBase {
   pendingEntries: EthSignKeychainEntry[]; // entries pending sync with Arweave if the network fails
 }
 
-export const getEncryptedStringFromBuffer = (object: EthSignKeychainState, key: string): string => {
+// NOTE: This is duplicated in arweave.ts
+const getEncryptedStringFromBuffer = (object: EthSignKeychainState, key: string): string => {
   const encryptedString = CryptoJS.AES.encrypt(JSON.stringify(object), key).toString();
   return encryptedString;
 };
 
-export const decryptDataArrayFromStringAES = (encryptedString: string, key = ""): EthSignKeychainState => {
+// NOTE: This is duplicated in arweave.ts
+const decryptDataArrayFromStringAES = (encryptedString: string, key = ""): EthSignKeychainState => {
   const bytes = CryptoJS.AES.decrypt(encryptedString, key);
   const decrypted: EthSignKeychainState = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
   return decrypted;

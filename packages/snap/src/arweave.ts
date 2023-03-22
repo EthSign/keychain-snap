@@ -1,9 +1,22 @@
 import { fetchCachedTx, fetchTxOnArweave, postUploadToStorage } from "./misc/storage";
 import { StoragePayload } from "./types";
-import { decryptDataArrayFromStringAES, EthSignKeychainState, getEncryptedStringFromBuffer } from ".";
+import { EthSignKeychainState } from ".";
 import { personalSign } from "@metamask/eth-sig-util";
 import { createHash } from "crypto";
 import _ from "lodash";
+
+// NOTE: This is duplicated from index.ts
+const getEncryptedStringFromBuffer = (object: EthSignKeychainState, key: string): string => {
+  const encryptedString = CryptoJS.AES.encrypt(JSON.stringify(object), key).toString();
+  return encryptedString;
+};
+
+// NOTE: This is duplicated from index.ts
+const decryptDataArrayFromStringAES = (encryptedString: string, key = ""): EthSignKeychainState => {
+  const bytes = CryptoJS.AES.decrypt(encryptedString, key);
+  const decrypted: EthSignKeychainState = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+  return decrypted;
+};
 
 export const getTransactionIdFromStorageUpload = async (
   userPublicKey: string,
