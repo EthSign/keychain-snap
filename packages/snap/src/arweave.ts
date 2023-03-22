@@ -1,6 +1,5 @@
 import { fetchCachedTx, fetchTxOnArweave, postUploadToStorage } from "./misc/storage";
-import { ArweavePayload, StoragePayload } from "./types";
-import { ethers } from "ethers";
+import { StoragePayload } from "./types";
 import { decryptDataArrayFromStringAES, EthSignKeychainState, getEncryptedStringFromBuffer } from ".";
 import { personalSign } from "@metamask/eth-sig-util";
 import { createHash } from "crypto";
@@ -79,7 +78,7 @@ const getObjectIdFromStorage = async (userPublicKey: string) => {
             { name: "PublicKey", values: ["${userPublicKey}"] },
             { name: "Application", values: ["EthSignKeychain"] }
           ],
-          first: 1${cursor ? ', after: "' + cursor + '"' : ""}
+          first: 100${cursor ? ', after: "' + cursor + '"' : ""}
         ) {
           edges {
             cursor
@@ -134,11 +133,9 @@ export const getObjectsFromStorage = async (
   userPublicKey: string,
   userPrivateKey: string
 ): Promise<any | undefined> => {
-  // TODO: Make sure we receive new files IN INCREASING TIMESTAMP ORDER
-
   const nodeList: { cursor: string; node: { id: string; block?: { height: number }; timestamp?: number } }[] = (
-    await getObjectsFromCache(userPublicKey)
-  ).concat(await getObjectIdFromStorage(userPublicKey));
+    await getObjectIdFromStorage(userPublicKey)
+  ).concat(await getObjectsFromCache(userPublicKey));
 
   const state: EthSignKeychainState = {
     config: { address: userPublicKey, encryptionMethod: "BIP-44", timestamp: 0 },

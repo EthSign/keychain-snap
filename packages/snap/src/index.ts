@@ -1,7 +1,5 @@
-import { getBIP44AddressKeyDeriver } from "@metamask/key-tree";
 import CryptoJS from "crypto-js";
 import { OnRpcRequestHandler } from "@metamask/snaps-types";
-import { panel, text } from "@metamask/snaps-ui";
 
 interface EthSignKeychainBase {
   address: string;
