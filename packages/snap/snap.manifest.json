@@ -1,13 +1,13 @@
 {
   "version": "0.1.0",
-  "description": "An example Snap written in TypeScript.",
-  "proposedName": "TypeScript Example Snap",
+  "description": "Password manager.",
+  "proposedName": "EthSign Keychain",
   "repository": {
     "type": "git",
     "url": "https://github.com/MetaMask/template-snap-monorepo.git"
   },
   "source": {
-    "shasum": "Sn14kGj4CgzG4LiSYyQEqtpl0Zym23uiZT5Q5i34jZ4=",
+    "shasum": "GSM26dwv8ks9B954L2MenOAAVeK6TSH1dmdATpketBk=",
     "location": {
       "npm": {
         "filePath": "dist/bundle.js",

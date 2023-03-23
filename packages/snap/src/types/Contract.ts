@@ -1,4 +1,4 @@
-import { Recipient } from "./Recipient";
+import { Recipient } from './Recipient';
 
 // SIGN
 // VIEW
@@ -7,26 +7,26 @@ import { Recipient } from "./Recipient";
 // maybe DRAFT later ???
 
 export enum ContractStatus {
-  SIGN = "SIGN",
-  VIEW = "VIEW",
-  COMPLETED = "COMPLETED",
-  EXPIRED = "EXPIRED"
+  SIGN = 'SIGN',
+  VIEW = 'VIEW',
+  COMPLETED = 'COMPLETED',
+  EXPIRED = 'EXPIRED',
 }
 
 export enum ContractProgress {
-  NONE = "NONE",
-  INITIATED = "INITIATED",
-  INITIATING_FAILED = "INITIATING_FAILED",
-  ENCRYPTING_FILE = "ENCRYPTING_FILE",
-  UPLOADING_TO_ARWEAVE = "UPLOADING_TO_ARWEAVE",
-  UPLOADING_FAILED = "UPLOADING_FAILED",
-  AWAITING_TRANSACION = "AWAITING_TRANSACION",
-  WAITING_FOR_CONFIRMATIONS = "WAITING_FOR_CONFIRMATIONS",
-  SUCCESS = "SUCCESS",
-  FAILED = "FAILED"
+  NONE = 'NONE',
+  INITIATED = 'INITIATED',
+  INITIATING_FAILED = 'INITIATING_FAILED',
+  ENCRYPTING_FILE = 'ENCRYPTING_FILE',
+  UPLOADING_TO_ARWEAVE = 'UPLOADING_TO_ARWEAVE',
+  UPLOADING_FAILED = 'UPLOADING_FAILED',
+  AWAITING_TRANSACION = 'AWAITING_TRANSACION',
+  WAITING_FOR_CONFIRMATIONS = 'WAITING_FOR_CONFIRMATIONS',
+  SUCCESS = 'SUCCESS',
+  FAILED = 'FAILED',
 }
 
-export interface Contract {
+export type Contract = {
   id: string;
   name: string;
   expiry: number;
@@ -47,15 +47,15 @@ export interface Contract {
     status: ContractStatus;
     expiredAt: string;
   };
-}
+};
 
 export enum EncryptMethod {
   DEFAULT = 0,
   ONETAP = 1,
-  PASSWORD = 2
+  PASSWORD = 2,
 }
 
-export interface ArweavePayload {
+export type ArweavePayload = {
   recipientKeys: {
     [key: string]: string;
   }[];
@@ -64,19 +64,19 @@ export interface ArweavePayload {
   meta: {
     version: string;
   };
-}
+};
 
-export interface StoragePayload {
+export type StoragePayload = {
   signature: string;
   message: string;
   data: string;
   tags: { name: string; value: string }[];
-}
+};
 
-export interface StorageResponse {
+export type StorageResponse = {
   input?: unknown;
   message: string;
   transaction: {
     itemId: string;
   };
-}
+};

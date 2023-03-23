@@ -11,9 +11,7 @@ export const getThemePreference = () => {
     return false;
   }
 
-  const darkModeSystem = window?.matchMedia(
-    '(prefers-color-scheme: dark)',
-  ).matches;
+  const darkModeSystem = window?.matchMedia('(prefers-color-scheme: dark)').matches;
 
   const localStoragePreference = getLocalStorage('theme');
   const systemPreference = darkModeSystem ? 'dark' : 'light';

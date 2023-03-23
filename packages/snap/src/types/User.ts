@@ -1,4 +1,4 @@
-export interface User {
+export type User = {
   address: string;
   alias?: string | null;
   nickname?: string;
@@ -7,4 +7,4 @@ export interface User {
   isValid?: boolean;
   oneTapEnabled: boolean;
   regKey: string | null;
-}
+};
