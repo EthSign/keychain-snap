@@ -1,7 +1,17 @@
 import { useContext } from "react";
 import styled from "styled-components";
 import { MetamaskActions, MetaMaskContext } from "../hooks";
-import { connectSnap, getSnap, sendGet, sendRemove, sendSet, sendSync, shouldDisplayReconnectButton } from "../utils";
+import {
+  connectSnap,
+  getSnap,
+  sendClearNeverSaveClick,
+  sendGet,
+  sendRemove,
+  sendSet,
+  sendSetNeverSaveClick,
+  sendSync,
+  shouldDisplayReconnectButton
+} from "../utils";
 import {
   ConnectButton,
   InstallFlaskButton,
@@ -10,7 +20,9 @@ import {
   SendRemoveButton,
   SendSaveButton,
   SendGetButton,
-  SendSyncButton
+  SendSyncButton,
+  SendSetNeverSaveButton,
+  SendClearNeverSaveButton
 } from "../components";
 
 const Container = styled.div`
@@ -151,6 +163,24 @@ const Index = () => {
     }
   };
 
+  const handleSetNeverSaveClick = async () => {
+    try {
+      console.log(await sendSetNeverSaveClick());
+    } catch (e) {
+      console.error(e);
+      dispatch({ type: MetamaskActions.SetError, payload: e });
+    }
+  };
+
+  const handleClearNeverSaveClick = async () => {
+    try {
+      console.log(await sendClearNeverSaveClick());
+    } catch (e) {
+      console.error(e);
+      dispatch({ type: MetamaskActions.SetError, payload: e });
+    }
+  };
+
   const handleSendSyncClick = async () => {
     try {
       console.log(await sendSync());
@@ -215,6 +245,8 @@ const Index = () => {
                 <SendRemoveButton onClick={handleSendRemoveClick} disabled={!state.installedSnap} />
                 <SendSaveButton onClick={handleSendSaveClick} disabled={!state.installedSnap} />
                 <SendGetButton onClick={handleSendGetClick} disabled={!state.installedSnap} />
+                <SendSetNeverSaveButton onClick={handleSetNeverSaveClick} disabled={!state.installedSnap} />
+                <SendClearNeverSaveButton onClick={handleClearNeverSaveClick} disabled={!state.installedSnap} />
                 <SendSyncButton onClick={handleSendSyncClick} disabled={!state.installedSnap} />
               </>
             )

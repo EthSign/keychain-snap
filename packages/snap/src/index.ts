@@ -1,9 +1,9 @@
-import CryptoJS from 'crypto-js';
+import CryptoJS from "crypto-js";
 // eslint-disable-next-line
 import * as types from "@metamask/snaps-types";
 
-import { Mutex } from 'async-mutex';
-import { getObjectsFromStorage, getTransactionIdFromStorageUploadBatch } from './arweave';
+import { Mutex } from "async-mutex";
+import { getObjectsFromStorage, getTransactionIdFromStorageUploadBatch } from "./arweave";
 
 declare type Maybe<T> = Partial<T> | null | undefined;
 
@@ -45,7 +45,7 @@ const getEncryptedStringFromBuffer = (object: EthSignKeychainState, key: string)
 };
 
 // NOTE: This is duplicated in arweave.ts
-const decryptDataArrayFromStringAES = (encryptedString: string, key = ''): EthSignKeychainState => {
+const decryptDataArrayFromStringAES = (encryptedString: string, key = ""): EthSignKeychainState => {
   const bytes = CryptoJS.AES.decrypt(encryptedString, key);
   const decrypted: EthSignKeychainState = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
   return decrypted;
@@ -58,49 +58,49 @@ const decryptDataArrayFromStringAES = (encryptedString: string, key = ''): EthSi
  */
 async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
   const ethNode: any = await snap.request({
-    method: 'snap_getBip44Entropy',
+    method: "snap_getBip44Entropy",
     params: {
-      coinType: 1,
-    },
+      coinType: 60
+    }
   });
 
   if (!ethNode?.privateKey) {
     return {
-      address: '',
+      address: "",
       timestamp: 0,
       config: {
-        address: '',
+        address: "",
         timestamp: 0,
-        encryptionMethod: 'BIP-44',
+        encryptionMethod: "BIP-44"
       },
       pwState: {},
-      pendingEntries: [],
+      pendingEntries: []
     } as EthSignKeychainState;
   }
 
   const state = await snap.request({
-    method: 'snap_manageState',
+    method: "snap_manageState",
     params: {
-      operation: 'get',
-    },
+      operation: "get"
+    }
   });
 
   if (
     !state ||
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    (typeof state === 'object' && state === undefined)
+    (typeof state === "object" && state === undefined)
   ) {
     return {
-      address: '',
+      address: "",
       timestamp: 0,
       config: {
-        address: '',
+        address: "",
         timestamp: 0,
-        encryptionMethod: 'BIP-44',
+        encryptionMethod: "BIP-44"
       },
       pwState: {},
-      pendingEntries: [],
+      pendingEntries: []
     } as EthSignKeychainState;
   }
 
@@ -108,8 +108,8 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
     decryptDataArrayFromStringAES(
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      (state?.ethsignKeychainState as string | undefined | null) ?? '',
-      ethNode.privateKey,
+      (state?.ethsignKeychainState as string | undefined | null) ?? "",
+      ethNode.privateKey
     ) ?? {}
   );
 }
@@ -121,10 +121,10 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
  */
 async function savePasswords(newState: EthSignKeychainState) {
   const ethNode: any = await snap.request({
-    method: 'snap_getBip44Entropy',
+    method: "snap_getBip44Entropy",
     params: {
-      coinType: 1,
-    },
+      coinType: 60
+    }
   });
 
   if (!ethNode?.privateKey) {
@@ -133,11 +133,11 @@ async function savePasswords(newState: EthSignKeychainState) {
 
   // The state is automatically encrypted behind the scenes by MetaMask using snap-specific keys
   await snap.request({
-    method: 'snap_manageState',
+    method: "snap_manageState",
     params: {
-      operation: 'update',
-      newState: { ethsignKeychainState: getEncryptedStringFromBuffer(newState, ethNode.privateKey) },
-    },
+      operation: "update",
+      newState: { ethsignKeychainState: getEncryptedStringFromBuffer(newState, ethNode.privateKey) }
+    }
   });
 }
 
@@ -148,10 +148,10 @@ async function savePasswords(newState: EthSignKeychainState) {
  */
 async function sync(state: EthSignKeychainState): Promise<EthSignKeychainState | undefined> {
   const ethNode: any = await snap.request({
-    method: 'snap_getBip44Entropy',
+    method: "snap_getBip44Entropy",
     params: {
-      coinType: 1,
-    },
+      coinType: 60
+    }
   });
 
   if (!ethNode?.privateKey) {
@@ -164,21 +164,21 @@ async function sync(state: EthSignKeychainState): Promise<EthSignKeychainState |
   const tmpState = await mergeStates(doc, state);
 
   // If config has never been initialized, initialize it
-  if (!tmpState.config.address || tmpState.config.address === '') {
+  if (!tmpState.config.address || tmpState.config.address === "") {
     tmpState.config = {
       address: ethNode.publicKey,
-      encryptionMethod: 'BIP-44',
-      timestamp: Math.floor(Date.now() / 1000),
+      encryptionMethod: "BIP-44",
+      timestamp: Math.floor(Date.now() / 1000)
     };
 
     await arweaveMutex.runExclusive(async () => {
       tmpState.pendingEntries.push({
-        type: 'config',
+        type: "config",
         payload: {
           timestamp: tmpState.config.timestamp,
           address: tmpState.config.address,
-          encryptionMethod: tmpState.config.encryptionMethod,
-        },
+          encryptionMethod: tmpState.config.encryptionMethod
+        }
       } as any);
     });
   }
@@ -205,16 +205,18 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
     localState.config.address = remoteState.config.address;
     localState.config.encryptionMethod = remoteState.config.encryptionMethod;
   } else if (localState.config.timestamp !== remoteState.config.timestamp) {
-    await arweaveMutex.runExclusive(async () => {
-      localState.pendingEntries.push({
-        type: 'config',
-        payload: {
-          timestamp: localState.config.timestamp,
-          address: localState.config.address,
-          encryptionMethod: localState.config.encryptionMethod,
-        },
-      } as any);
-    });
+    if (localState.pendingEntries.findIndex((entry: any) => entry.type === "config") < 0) {
+      await arweaveMutex.runExclusive(async () => {
+        localState.pendingEntries.push({
+          type: "config",
+          payload: {
+            timestamp: localState.config.timestamp,
+            address: localState.config.address,
+            encryptionMethod: localState.config.encryptionMethod
+          }
+        } as any);
+      });
+    }
   }
 
   // Iterate through local state. Update existing pwStates with remote object (if timestamp greater)
@@ -226,22 +228,27 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
       if (remoteState.pwState[key].neverSave) {
         // Clear local state
         localState.pwState[key].logins = [];
+      } else if (localState.pwState[key]?.neverSave) {
+        localState.pwState[key].neverSave = false;
       }
     } else {
       // Local state is newer
       // eslint-disable-next-line no-lonely-if
       if (
         localState.pwState[key].neverSave &&
-        localState.pwState[key].neverSave !== remoteState.pwState[key].neverSave
+        localState.pwState[key].neverSave !== remoteState.pwState[key]?.neverSave &&
+        localState.pendingEntries.findIndex(
+          (entry: any) => entry.type === "pwStateClear" && entry.payload.url === key
+        ) < 0
       ) {
         // Trigger login removal for key
         await arweaveMutex.runExclusive(async () => {
           localState.pendingEntries.push({
-            type: 'pwStateClear',
+            type: "pwStateClear",
             payload: {
               url: key,
-              timestamp: localState.pwState[key].timestamp,
-            },
+              timestamp: localState.pwState[key].timestamp
+            }
           } as any);
         });
       }
@@ -268,8 +275,8 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
               // Local entry is newer
               await arweaveMutex.runExclusive(async () => {
                 localState.pendingEntries.push({
-                  type: 'pwStateSet',
-                  payload: localEntry,
+                  type: "pwStateSet",
+                  payload: localEntry
                 } as any);
               });
             }
@@ -280,6 +287,8 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
         }
       } else {
         // TODO: Upload state remotely
+        // Somehow we have a local state that does not exist remotely, likely with no pending entries
+        // (shouldn't happen unless something magically breaks)
       }
 
       // If we did not find the entry and the localState is stale, remove entry from local state
@@ -306,7 +315,7 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
             address: remoteEntry.address,
             username: remoteEntry.username,
             password: remoteEntry.password,
-            url: remoteEntry.url,
+            url: remoteEntry.url
           });
         }
       }
@@ -320,27 +329,30 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
  * Exclusively process all pending transactions.
  */
 async function processPending() {
-  await arweaveMutex.runExclusive(async () => {
+  return await arweaveMutex.runExclusive(async () => {
     const state = await getEthSignKeychainState();
     const ethNode: any = await snap.request({
-      method: 'snap_getBip44Entropy',
+      method: "snap_getBip44Entropy",
       params: {
-        coinType: 1,
-      },
+        coinType: 60
+      }
     });
 
     if (!ethNode?.privateKey) {
       return;
     }
 
-    const ret: any = await getTransactionIdFromStorageUploadBatch(
-      ethNode.publicKey,
-      ethNode.privateKey,
-      state.pendingEntries as any,
+    const ret: any = JSON.parse(
+      (await getTransactionIdFromStorageUploadBatch(
+        ethNode.publicKey,
+        ethNode.privateKey,
+        state.pendingEntries as any
+      )) ?? "{}"
     );
 
-    if (ret?.transaction?.message === 'success') {
+    if (ret?.transaction?.message === "success") {
       state.pendingEntries = [];
+      await savePasswords(state);
     }
   });
 }
@@ -350,11 +362,45 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
 
   let timestamp: number;
   let showPassword: Maybe<{ valueOf: () => boolean }>;
-  let website: string, username: string, password: string;
+  let website: string, username: string, password: string, neverSave: boolean;
   switch (request.method) {
-    case 'sync':
+    case "sync":
       return await sync(state);
-    case 'set_password':
+    case "set_neversave":
+      ({ website, neverSave } = request.params);
+      await saveMutex.runExclusive(async () => {
+        timestamp = Math.floor(Date.now() / 1000);
+        const newPwState = Object.assign({}, state.pwState);
+        if (newPwState[website]) {
+          newPwState[website].logins = [];
+          newPwState[website].neverSave = neverSave;
+          newPwState[website].timestamp = timestamp;
+        } else {
+          newPwState[website] = {
+            timestamp: timestamp,
+            neverSave: neverSave,
+            logins: []
+          };
+        }
+
+        state.timestamp = timestamp;
+        state.pwState = newPwState;
+      });
+
+      await arweaveMutex.runExclusive(async () => {
+        state.pendingEntries.push({
+          type: "pwStateNeverSaveSet",
+          payload: {
+            timestamp,
+            url: website,
+            neverSave
+          }
+        } as any);
+      });
+      await savePasswords(state);
+      await processPending();
+      return "OK";
+    case "set_password":
       ({ website, username, password } = request.params);
       await saveMutex.runExclusive(async () => {
         timestamp = Math.floor(Date.now() / 1000);
@@ -369,7 +415,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
           newPwState[website] = {
             timestamp,
             neverSave: false,
-            logins: [{ address: '', url: website, username, password, timestamp }],
+            logins: [{ address: "", url: website, username, password, timestamp }]
           };
         } else if (idx < 0) {
           // Add username/password pair to current credential entry
@@ -377,7 +423,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
             url: website,
             timestamp,
             username,
-            password,
+            password
           });
         } else {
           // Update password for current credential entry pair
@@ -385,45 +431,43 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
           newPwState[website].timestamp = timestamp;
         }
 
-        const newState = {
-          ...state,
-          timestamp,
-          pwState: newPwState,
-        };
-        await savePasswords(newState);
+        state.timestamp = timestamp;
+        state.pwState = newPwState;
       });
 
       await arweaveMutex.runExclusive(async () => {
         state.pendingEntries.push({
-          type: 'pwStateSet',
+          type: "pwStateSet",
           payload: {
             timestamp,
             url: website,
             username,
-            password,
-          },
+            password
+          }
         } as any);
       });
+
+      await savePasswords(state);
       await processPending();
-      return 'OK';
-    case 'get_password':
+      return "OK";
+    case "get_password":
       ({ website } = request.params);
       showPassword = await snap.request({
-        method: 'snap_confirm',
+        method: "snap_confirm",
         params: [
           {
-            prompt: 'Confirm credentials request?',
-            description: 'Do you want to display the password in plaintext?',
-            textAreaContent: `The DApp "${origin}" is asking your credentials for "${website}"`,
-          },
-        ],
+            prompt: "Confirm credentials request?",
+            description: "Do you want to display the password in plaintext?",
+            textAreaContent: `The DApp "${origin}" is asking your credentials for "${website}"`
+          }
+        ]
       });
 
       if (!showPassword) {
         return undefined;
       }
-      return state.pwState[website].logins;
-    case 'remove_password':
+      return state.pwState[website];
+    case "remove_password":
       ({ website, username } = request.params);
       await saveMutex.runExclusive(async () => {
         timestamp = Math.floor(Date.now() / 1000);
@@ -437,27 +481,25 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
           newPwState[website].logins.splice(idx, 1);
         }
 
-        const newState = {
-          ...state,
-          timestamp,
-          pwState: newPwState,
-        };
-        await savePasswords(newState);
+        state.timestamp = timestamp;
+        state.pwState = newPwState;
       });
 
       await arweaveMutex.runExclusive(async () => {
         state.pendingEntries.push({
-          type: 'pwStateDel',
+          type: "pwStateDel",
           payload: {
             timestamp,
             url: website,
-            username,
-          },
+            username
+          }
         } as any);
       });
+
+      await savePasswords(state);
       await processPending();
-      return 'OK';
+      return "OK";
     default:
-      throw new Error('Method not found.');
+      throw new Error("Method not found.");
   }
 };
