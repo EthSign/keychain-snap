@@ -1,25 +1,25 @@
-import { ArweavePayload, StoragePayload, StorageResponse } from "../types";
+import { ArweavePayload, StoragePayload, StorageResponse } from '../types';
 
-const REACT_APP_ETHSIGN_API_URL = "https://localhost:4000";
+const REACT_APP_ETHSIGN_API_URL = 'https://localhost:4000';
 
 export const postUploadToStorage = async (data: StoragePayload): Promise<StorageResponse | undefined> => {
   // return BaseAPI.post(`${process.env.REACT_APP_ETHSIGN_API_URL}/upload`, data);
   let tx: any;
   await fetch(`${REACT_APP_ETHSIGN_API_URL}/upload`, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json"
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(data),
   })
     .then((res) => res.json())
     .then((response) => {
-      tx = { message: "success", transaction: response };
+      tx = { message: 'success', transaction: response };
     })
     .catch((err) => {
       tx = {
-        message: "failed",
-        transaction: err as any
+        message: 'failed',
+        transaction: err as any,
       };
     });
 
@@ -30,20 +30,20 @@ export const postUploadBatchToStorage = async (data: StoragePayload[]): Promise<
   // return BaseAPI.post(`${process.env.REACT_APP_ETHSIGN_API_URL}/upload`, data);
   let tx: any;
   await fetch(`${REACT_APP_ETHSIGN_API_URL}/uploadBatch`, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json"
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ batchedUploads: data })
+    body: JSON.stringify({ batchedUploads: data }),
   })
     .then((res) => res.json())
     .then((response) => {
-      tx = { message: "success", transaction: response };
+      tx = { message: 'success', transaction: response };
     })
     .catch((err) => {
       tx = {
-        message: "failed",
-        transaction: err as any
+        message: 'failed',
+        transaction: err as any,
       };
     });
 
@@ -53,10 +53,10 @@ export const postUploadBatchToStorage = async (data: StoragePayload[]): Promise<
 export const fetchTxOnArweave = async (txId: string): Promise<ArweavePayload> => {
   let ret: any;
   await fetch(`${REACT_APP_ETHSIGN_API_URL}/transaction/${txId}`, {
-    method: "GET",
+    method: 'GET',
     headers: {
-      "Cache-Control": "no-cache"
-    }
+      'Cache-Control': 'no-cache',
+    },
   }).then((response: any) => (ret = response.json()));
 
   return ret?.transaction ? ret.transaction : ret;
@@ -65,11 +65,11 @@ export const fetchTxOnArweave = async (txId: string): Promise<ArweavePayload> =>
 export const batchFetchTxOnArweave = async (txIds: string[]): Promise<ArweavePayload[]> => {
   let ret: any = [];
   await fetch(`${REACT_APP_ETHSIGN_API_URL}/transactions/`, {
-    method: "POST",
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json"
+      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ ids: txIds })
+    body: JSON.stringify({ ids: txIds }),
   })
     .then((res) => res.json())
     .then((response) => (ret = response ?? []));
@@ -80,10 +80,10 @@ export const batchFetchTxOnArweave = async (txIds: string[]): Promise<ArweavePay
 export const fetchCachedTx = async (userPublicKey: string): Promise<ArweavePayload> => {
   let ret: any;
   await fetch(`${REACT_APP_ETHSIGN_API_URL}/cached/${userPublicKey}`, {
-    method: "GET",
+    method: 'GET',
     headers: {
-      "Cache-Control": "no-cache"
-    }
+      'Cache-Control': 'no-cache',
+    },
   }).then((response: any) => (ret = response.json()));
 
   return ret;

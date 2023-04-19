@@ -4,6 +4,7 @@ import * as types from "@metamask/snaps-types";
 
 import { Mutex } from "async-mutex";
 import { getObjectsFromStorage, getTransactionIdFromStorageUploadBatch } from "./arweave";
+import { heading, panel, text } from "@metamask/snaps-ui";
 
 declare type Maybe<T> = Partial<T> | null | undefined;
 
@@ -361,7 +362,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   const state = await getEthSignKeychainState();
 
   let timestamp: number;
-  let showPassword: Maybe<{ valueOf: () => boolean }>;
+  let showPassword: string | boolean | null;
   let website: string, username: string, password: string, neverSave: boolean;
   switch (request.method) {
     case "sync":
@@ -377,8 +378,8 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
           newPwState[website].timestamp = timestamp;
         } else {
           newPwState[website] = {
-            timestamp: timestamp,
-            neverSave: neverSave,
+            timestamp,
+            neverSave,
             logins: []
           };
         }
@@ -453,14 +454,15 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
     case "get_password":
       ({ website } = request.params);
       showPassword = await snap.request({
-        method: "snap_confirm",
-        params: [
-          {
-            prompt: "Confirm credentials request?",
-            description: "Do you want to display the password in plaintext?",
-            textAreaContent: `The DApp "${origin}" is asking your credentials for "${website}"`
-          }
-        ]
+        method: "snap_dialog",
+        params: {
+          type: "confirmation",
+          content: panel([
+            heading("Confirm credentials request?"),
+            text("Do you want to display the password in plaintext?"),
+            text(`The DApp "${origin}" is asking your credentials for "${website}"`)
+          ])
+        }
       });
 
       if (!showPassword) {
