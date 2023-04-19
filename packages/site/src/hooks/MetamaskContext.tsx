@@ -1,11 +1,4 @@
-import {
-  createContext,
-  Dispatch,
-  ReactNode,
-  Reducer,
-  useEffect,
-  useReducer,
-} from 'react';
+import { createContext, Dispatch, ReactNode, Reducer, useEffect, useReducer } from 'react';
 import { Snap } from '../types';
 import { isFlask, getSnap } from '../utils';
 
@@ -22,9 +15,7 @@ const initialState: MetamaskState = {
 
 type MetamaskDispatch = { type: MetamaskActions; payload: any };
 
-export const MetaMaskContext = createContext<
-  [MetamaskState, Dispatch<MetamaskDispatch>]
->([
+export const MetaMaskContext = createContext<[MetamaskState, Dispatch<MetamaskDispatch>]>([
   initialState,
   () => {
     /* no op */
@@ -120,9 +111,5 @@ export const MetaMaskProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [state.error]);
 
-  return (
-    <MetaMaskContext.Provider value={[state, dispatch]}>
-      {children}
-    </MetaMaskContext.Provider>
-  );
+  return <MetaMaskContext.Provider value={[state, dispatch]}>{children}</MetaMaskContext.Provider>;
 };

@@ -10,8 +10,8 @@ import {
   sendSet,
   sendSetNeverSaveClick,
   sendSync,
-  shouldDisplayReconnectButton
-} from "../utils";
+  shouldDisplayReconnectButton,
+} from '../utils';
 import {
   ConnectButton,
   InstallFlaskButton,
@@ -22,8 +22,8 @@ import {
   SendGetButton,
   SendSyncButton,
   SendSetNeverSaveButton,
-  SendClearNeverSaveButton
-} from "../components";
+  SendClearNeverSaveButton,
+} from '../components';
 
 const Container = styled.div`
   display: flex;
@@ -119,7 +119,7 @@ const Index = () => {
 
       dispatch({
         type: MetamaskActions.SetInstalled,
-        payload: installedSnap
+        payload: installedSnap,
       });
 
       // Sync with remote on install
@@ -207,10 +207,10 @@ const Index = () => {
         {!state.isFlask && (
           <Card
             content={{
-              title: "Install",
+              title: 'Install',
               description:
-                "Snaps is pre-release software only available in MetaMask Flask, a canary distribution for developers with access to upcoming features.",
-              button: <InstallFlaskButton />
+                'Snaps is pre-release software only available in MetaMask Flask, a canary distribution for developers with access to upcoming features.',
+              button: <InstallFlaskButton />,
             }}
             fullWidth
           />
@@ -218,9 +218,9 @@ const Index = () => {
         {!state.installedSnap && (
           <Card
             content={{
-              title: "Connect",
-              description: "Get started by connecting to and installing the example snap.",
-              button: <ConnectButton onClick={handleConnectClick} disabled={!state.isFlask} />
+              title: 'Connect',
+              description: 'Get started by connecting to and installing the example snap.',
+              button: <ConnectButton onClick={handleConnectClick} disabled={!state.isFlask} />,
             }}
             disabled={!state.isFlask}
           />
@@ -228,18 +228,18 @@ const Index = () => {
         {shouldDisplayReconnectButton(state.installedSnap) && (
           <Card
             content={{
-              title: "Reconnect",
+              title: 'Reconnect',
               description:
-                "While connected to a local running snap this button will always be displayed in order to update the snap if a change is made.",
-              button: <ReconnectButton onClick={handleConnectClick} disabled={!state.installedSnap} />
+                'While connected to a local running snap this button will always be displayed in order to update the snap if a change is made.',
+              button: <ReconnectButton onClick={handleConnectClick} disabled={!state.installedSnap} />,
             }}
             disabled={!state.installedSnap}
           />
         )}
         <Card
           content={{
-            title: "Send Hello message",
-            description: "Display a custom message within a confirmation screen in MetaMask.",
+            title: 'Send Hello message',
+            description: 'Display a custom message within a confirmation screen in MetaMask.',
             button: (
               <>
                 <SendRemoveButton onClick={handleSendRemoveClick} disabled={!state.installedSnap} />
@@ -249,7 +249,7 @@ const Index = () => {
                 <SendClearNeverSaveButton onClick={handleClearNeverSaveClick} disabled={!state.installedSnap} />
                 <SendSyncButton onClick={handleSendSyncClick} disabled={!state.installedSnap} />
               </>
-            )
+            ),
           }}
           disabled={!state.installedSnap}
           fullWidth={
