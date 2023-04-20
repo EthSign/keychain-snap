@@ -5,6 +5,9 @@ module.exports = {
     port: 8081
   },
   bundlerCustomizer: (bundler) => {
+    // Fixes a SES issue
+    bundler.ignore('@chainsafe/as-sha256');
+
     const through = require("through2");
     bundler.transform(function () {
       let data = "";
