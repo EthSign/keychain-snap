@@ -167,26 +167,30 @@ const getObjectIdFromStorage = async (userPublicKey: string) => {
     `;
     // eslint-disable-next-line  no-loop-func
     newCount = await new Promise((resolve) => {
-      fetch('https://arweave.net/graphql', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query,
-        }),
-      })
-        .then((res) => res.json())
-        .then((response) => {
-          if (response?.data?.transactions?.edges && response.data.transactions.edges.length > 0) {
-            cursor = response.data.transactions.edges[response.data.transactions.edges.length - 1].cursor;
-            ret = ret.concat(response.data.transactions.edges);
-            resolve(response.data.transactions.edges.length);
-          } else {
-            resolve(0);
-          }
+      try {
+        fetch('https://arweave.net/graphql', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query,
+          }),
         })
-        .catch(() => resolve(0));
+          .then((res) => res.json())
+          .then((response) => {
+            if (response?.data?.transactions?.edges && response.data.transactions.edges.length > 0) {
+              cursor = response.data.transactions.edges[response.data.transactions.edges.length - 1].cursor;
+              ret = ret.concat(response.data.transactions.edges);
+              resolve(response.data.transactions.edges.length);
+            } else {
+              resolve(0);
+            }
+          })
+          .catch(() => resolve(0));
+      } catch(err) {
+        resolve(0);
+      }
     });
   }
 
