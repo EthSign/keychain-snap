@@ -32,6 +32,7 @@ export type EthSignKeychainState = {
     };
   }; // unencrypted
   pendingEntries: EthSignKeychainEntry[]; // entries pending sync with Arweave if the network fails
+  credentialAccess: string[];
 } & EthSignKeychainBase;
 
 const saveMutex = new Mutex();
@@ -74,6 +75,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       },
       pwState: {},
       pendingEntries: [],
+      credentialAccess: []
     } as EthSignKeychainState;
   }
 
@@ -100,6 +102,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       },
       pwState: {},
       pendingEntries: [],
+      credentialAccess: []
     } as EthSignKeychainState;
   }
 
@@ -147,7 +150,7 @@ async function savePasswords(newState: EthSignKeychainState) {
  *
  * @param state - Local state we are updating with fetched remote state.
  */
-async function sync(state: EthSignKeychainState): Promise<EthSignKeychainState | undefined> {
+async function sync(state: EthSignKeychainState): Promise<void> {
   const ethNode: any = await snap.request({
     method: 'snap_getBip44Entropy',
     params: {
@@ -156,7 +159,7 @@ async function sync(state: EthSignKeychainState): Promise<EthSignKeychainState |
   });
 
   if (!ethNode?.privateKey) {
-    return undefined;
+    return;
   }
 
   // Get the remote state built on all remote objects
@@ -189,7 +192,6 @@ async function sync(state: EthSignKeychainState): Promise<EthSignKeychainState |
 
   // Add changes to pendingState and call processPending()
   await processPending();
-  return tmpState;
 }
 
 /**
@@ -358,149 +360,195 @@ async function processPending() {
   });
 }
 
-module.exports.onRpcRequest = async ({ origin, request }: any) => {
-  const state = await getEthSignKeychainState();
+async function originHasAccess(origin: string, state: EthSignKeychainState) {
+  if(!state || !state.credentialAccess || !state.credentialAccess.includes(`${origin}`)) {
+    const showPassword = await snap.request({
+      method: 'snap_dialog',
+      params: {
+        type: 'confirmation',
+        content: panel([
+          heading('Security Alert'),
+          text(`"${origin}" is requesting access to your credentials. Would you like to proceed?`),
+        ]),
+      },
+    });
 
+    if(showPassword) {
+      // Update our local approved origin list
+      state.credentialAccess.push(origin);
+      await savePasswords(state);
+    } else {
+      return false;
+    }
+
+    return state.credentialAccess;
+  } else {
+    return true
+  }
+}
+
+async function setNeverSave(state: EthSignKeychainState, website: string, neverSave: boolean) {
   let timestamp: number;
-  let showPassword: string | boolean | null;
+  await saveMutex.runExclusive(async () => {
+    timestamp = Math.floor(Date.now() / 1000);
+    const newPwState = Object.assign({}, state.pwState);
+    if (newPwState[website]) {
+      newPwState[website].logins = [];
+      newPwState[website].neverSave = neverSave;
+      newPwState[website].timestamp = timestamp;
+    } else {
+      newPwState[website] = {
+        timestamp,
+        neverSave,
+        logins: [],
+      };
+    }
+
+    state.timestamp = timestamp;
+    state.pwState = newPwState;
+  });
+
+  await arweaveMutex.runExclusive(async () => {
+    state.pendingEntries.push({
+      type: 'pwStateNeverSaveSet',
+      payload: {
+        timestamp,
+        url: website,
+        neverSave,
+      },
+    } as any);
+  });
+  await savePasswords(state);
+  await processPending();
+}
+
+async function setPassword(state: EthSignKeychainState, website: string, username: string, password: string) {
+  let timestamp: number;
+  await saveMutex.runExclusive(async () => {
+    timestamp = Math.floor(Date.now() / 1000);
+    const newPwState = Object.assign({}, state.pwState);
+    let idx = -2;
+    if (newPwState[website]) {
+      // idx = _.findIndex(newPwState[website].logins, (e: EthSignKeychainEntry) => e.username === username);
+      idx = newPwState[website].logins.findIndex((e) => e.username === username);
+    }
+
+    if (idx === -2) {
+      newPwState[website] = {
+        timestamp,
+        neverSave: false,
+        logins: [{ address: '', url: website, username, password, timestamp }],
+      };
+    } else if (idx < 0) {
+      // Add username/password pair to current credential entry
+      newPwState[website].logins.push({
+        url: website,
+        timestamp,
+        username,
+        password,
+      });
+    } else {
+      // Update password for current credential entry pair
+      newPwState[website].logins[idx].password = password;
+      newPwState[website].timestamp = timestamp;
+    }
+
+    state.timestamp = timestamp;
+    state.pwState = newPwState;
+  });
+
+  await arweaveMutex.runExclusive(async () => {
+    state.pendingEntries.push({
+      type: 'pwStateSet',
+      payload: {
+        timestamp,
+        url: website,
+        username,
+        password,
+      },
+    } as any);
+  });
+
+  await savePasswords(state);
+  await processPending();
+}
+
+async function removePassword(state: EthSignKeychainState, website: string, username: string) {
+  let timestamp: number;
+  await saveMutex.runExclusive(async () => {
+    timestamp = Math.floor(Date.now() / 1000);
+    const newPwState = Object.assign({}, state.pwState);
+    let idx = -2;
+    if (newPwState[website]) {
+      idx = newPwState[website].logins.findIndex((e) => e.username === username);
+    }
+
+    if (idx >= 0) {
+      newPwState[website].logins.splice(idx, 1);
+    }
+
+    state.timestamp = timestamp;
+    state.pwState = newPwState;
+  });
+
+  await arweaveMutex.runExclusive(async () => {
+    state.pendingEntries.push({
+      type: 'pwStateDel',
+      payload: {
+        timestamp,
+        url: website,
+        username,
+      },
+    } as any);
+  });
+
+  await savePasswords(state);
+  await processPending();
+}
+
+module.exports.onRpcRequest = async ({ origin, request }: any) => {
+  // Get the local state for this snap
+  const state = await getEthSignKeychainState();
+  
+  // Make sure the current origin has explicit access to use this snap
+  const oha = await originHasAccess(origin, state)
+  if(!oha) {
+    throw new Error("Access denied.")
+  }
+
+  // If this origin was just added to the origin access list, oha will be
+  // the string array of all origins that have access. Update our state variable
+  // to have this updated list.
+  if(typeof(oha) !== "boolean") {
+    state.credentialAccess = oha;
+  }
+
+  // Call respective function depending on RPC method
   let website: string, username: string, password: string, neverSave: boolean;
   switch (request.method) {
     case 'sync':
-      return await sync(state);
+      await sync(state);
+      return 'OK';
+
     case 'set_neversave':
       ({ website, neverSave } = request.params);
-      await saveMutex.runExclusive(async () => {
-        timestamp = Math.floor(Date.now() / 1000);
-        const newPwState = Object.assign({}, state.pwState);
-        if (newPwState[website]) {
-          newPwState[website].logins = [];
-          newPwState[website].neverSave = neverSave;
-          newPwState[website].timestamp = timestamp;
-        } else {
-          newPwState[website] = {
-            timestamp,
-            neverSave,
-            logins: [],
-          };
-        }
-
-        state.timestamp = timestamp;
-        state.pwState = newPwState;
-      });
-
-      await arweaveMutex.runExclusive(async () => {
-        state.pendingEntries.push({
-          type: 'pwStateNeverSaveSet',
-          payload: {
-            timestamp,
-            url: website,
-            neverSave,
-          },
-        } as any);
-      });
-      await savePasswords(state);
-      await processPending();
+      await setNeverSave(state, website, neverSave);
       return 'OK';
+
     case 'set_password':
       ({ website, username, password } = request.params);
-      await saveMutex.runExclusive(async () => {
-        timestamp = Math.floor(Date.now() / 1000);
-        const newPwState = Object.assign({}, state.pwState);
-        let idx = -2;
-        if (newPwState[website]) {
-          // idx = _.findIndex(newPwState[website].logins, (e: EthSignKeychainEntry) => e.username === username);
-          idx = newPwState[website].logins.findIndex((e) => e.username === username);
-        }
-
-        if (idx === -2) {
-          newPwState[website] = {
-            timestamp,
-            neverSave: false,
-            logins: [{ address: '', url: website, username, password, timestamp }],
-          };
-        } else if (idx < 0) {
-          // Add username/password pair to current credential entry
-          newPwState[website].logins.push({
-            url: website,
-            timestamp,
-            username,
-            password,
-          });
-        } else {
-          // Update password for current credential entry pair
-          newPwState[website].logins[idx].password = password;
-          newPwState[website].timestamp = timestamp;
-        }
-
-        state.timestamp = timestamp;
-        state.pwState = newPwState;
-      });
-
-      await arweaveMutex.runExclusive(async () => {
-        state.pendingEntries.push({
-          type: 'pwStateSet',
-          payload: {
-            timestamp,
-            url: website,
-            username,
-            password,
-          },
-        } as any);
-      });
-
-      await savePasswords(state);
-      await processPending();
+      await setPassword(state, website, username, password);
       return 'OK';
+
     case 'get_password':
       ({ website } = request.params);
-      showPassword = await snap.request({
-        method: 'snap_dialog',
-        params: {
-          type: 'confirmation',
-          content: panel([
-            heading('Confirm credentials request?'),
-            text('Do you want to display the password in plaintext?'),
-            text(`The DApp "${origin}" is asking your credentials for "${website}"`),
-          ]),
-        },
-      });
-
-      if (!showPassword) {
-        return undefined;
-      }
       return state.pwState[website];
+      
     case 'remove_password':
       ({ website, username } = request.params);
-      await saveMutex.runExclusive(async () => {
-        timestamp = Math.floor(Date.now() / 1000);
-        const newPwState = Object.assign({}, state.pwState);
-        let idx = -2;
-        if (newPwState[website]) {
-          idx = newPwState[website].logins.findIndex((e) => e.username === username);
-        }
-
-        if (idx >= 0) {
-          newPwState[website].logins.splice(idx, 1);
-        }
-
-        state.timestamp = timestamp;
-        state.pwState = newPwState;
-      });
-
-      await arweaveMutex.runExclusive(async () => {
-        state.pendingEntries.push({
-          type: 'pwStateDel',
-          payload: {
-            timestamp,
-            url: website,
-            username,
-          },
-        } as any);
-      });
-
-      await savePasswords(state);
-      await processPending();
+      await removePassword(state, website, username);
       return 'OK';
+      
     default:
       throw new Error('Method not found.');
   }

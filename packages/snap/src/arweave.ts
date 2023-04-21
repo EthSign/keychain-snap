@@ -221,6 +221,7 @@ export const getObjectsFromStorage = async (
     pwState: {},
     address: userPublicKey,
     timestamp: 0,
+    credentialAccess: []
   };
 
   if (!nodeList || nodeList.length === 0) {
