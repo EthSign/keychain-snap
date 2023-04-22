@@ -24,7 +24,10 @@ module.exports = {
       files: ['**/*.test.ts', '**/*.test.js'],
       extends: ['@metamask/eslint-config-jest'],
       rules: {
-        '@typescript-eslint/no-shadow': ['error', { allow: ['describe', 'expect', 'it'] }],
+        '@typescript-eslint/no-shadow': [
+          'error',
+          { allow: ['describe', 'expect', 'it'] },
+        ],
       },
     },
   ],

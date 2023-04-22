@@ -1,10 +1,14 @@
-import CryptoJS from 'crypto-js';
 // eslint-disable-next-line
 import * as types from "@metamask/snaps-types";
 
 import { Mutex } from 'async-mutex';
 import { heading, panel, text } from '@metamask/snaps-ui';
-import { getObjectsFromStorage, getTransactionIdFromStorageUploadBatch } from './arweave';
+import {
+  decryptDataArrayFromStringAES,
+  getEncryptedStringFromBuffer,
+  getObjectsFromStorage,
+  getTransactionIdFromStorageUploadBatch,
+} from './arweave';
 
 type EthSignKeychainBase = {
   address?: string;
@@ -35,21 +39,9 @@ export type EthSignKeychainState = {
   credentialAccess: string[];
 } & EthSignKeychainBase;
 
+// Create mutexes for changing our local state object (no dirty writes)
 const saveMutex = new Mutex();
 const arweaveMutex = new Mutex();
-
-// NOTE: This is duplicated in arweave.ts
-const getEncryptedStringFromBuffer = (object: EthSignKeychainState, key: string): string => {
-  const encryptedString = CryptoJS.AES.encrypt(JSON.stringify(object), key).toString();
-  return encryptedString;
-};
-
-// NOTE: This is duplicated in arweave.ts
-const decryptDataArrayFromStringAES = (encryptedString: string, key = ''): EthSignKeychainState => {
-  const bytes = CryptoJS.AES.decrypt(encryptedString, key);
-  const decrypted: EthSignKeychainState = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
-  return decrypted;
-};
 
 /**
  * Get the EthSignKeychainState stored in MetaMask.
@@ -57,6 +49,7 @@ const decryptDataArrayFromStringAES = (encryptedString: string, key = ''): EthSi
  * @returns EthSignKeychainState object representing local state.
  */
 async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
+  // Get internal MetaMask keys
   const ethNode: any = await snap.request({
     method: 'snap_getBip44Entropy',
     params: {
@@ -64,6 +57,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
     },
   });
 
+  // Failed to get keys so return blank state
   if (!ethNode?.privateKey) {
     return {
       address: '',
@@ -75,10 +69,11 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       },
       pwState: {},
       pendingEntries: [],
-      credentialAccess: []
+      credentialAccess: [],
     } as EthSignKeychainState;
   }
 
+  // Get the stored local snap state
   const state = await snap.request({
     method: 'snap_manageState',
     params: {
@@ -86,6 +81,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
     },
   });
 
+  // Local state doesn't exist or we encounted unexpected error. Return empty state.
   if (
     !state ||
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -102,10 +98,11 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       },
       pwState: {},
       pendingEntries: [],
-      credentialAccess: []
+      credentialAccess: [],
     } as EthSignKeychainState;
   }
 
+  // Return decrypted state
   return (
     decryptDataArrayFromStringAES(
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -122,6 +119,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
  * @param newState - New state to save in MetaMask's storage.
  */
 async function savePasswords(newState: EthSignKeychainState) {
+  // Get internal MetaMask keys
   const ethNode: any = await snap.request({
     method: 'snap_getBip44Entropy',
     params: {
@@ -129,6 +127,7 @@ async function savePasswords(newState: EthSignKeychainState) {
     },
   });
 
+  // Error retrieving user keys, so return
   if (!ethNode?.privateKey) {
     return;
   }
@@ -139,7 +138,10 @@ async function savePasswords(newState: EthSignKeychainState) {
     params: {
       operation: 'update',
       newState: {
-        ethsignKeychainState: getEncryptedStringFromBuffer(newState, ethNode.privateKey),
+        ethsignKeychainState: getEncryptedStringFromBuffer(
+          newState,
+          ethNode.privateKey,
+        ),
       },
     },
   });
@@ -151,6 +153,7 @@ async function savePasswords(newState: EthSignKeychainState) {
  * @param state - Local state we are updating with fetched remote state.
  */
 async function sync(state: EthSignKeychainState): Promise<void> {
+  // Get internal MetaMask keys
   const ethNode: any = await snap.request({
     method: 'snap_getBip44Entropy',
     params: {
@@ -158,12 +161,16 @@ async function sync(state: EthSignKeychainState): Promise<void> {
     },
   });
 
+  // Failed to get internal keys, so return
   if (!ethNode?.privateKey) {
     return;
   }
 
   // Get the remote state built on all remote objects
-  const doc = await getObjectsFromStorage(ethNode.publicKey, ethNode.privateKey);
+  const doc = await getObjectsFromStorage(
+    ethNode.publicKey,
+    ethNode.privateKey,
+  );
   // Merge local state with remote state and get a list of changes that we need to upload remotely
   const tmpState = await mergeStates(doc, state);
 
@@ -175,6 +182,7 @@ async function sync(state: EthSignKeychainState): Promise<void> {
       timestamp: Math.floor(Date.now() / 1000),
     };
 
+    // Add config set pending entry (for remote Arweave update)
     await arweaveMutex.runExclusive(async () => {
       tmpState.pendingEntries.push({
         type: 'config',
@@ -201,14 +209,22 @@ async function sync(state: EthSignKeychainState): Promise<void> {
  * @param remoteState - Remote state we are merging into local state.
  * @param localState - Local state we are modifying with remote state.
  */
-async function mergeStates(remoteState: EthSignKeychainState, localState: EthSignKeychainState) {
+async function mergeStates(
+  remoteState: EthSignKeychainState,
+  localState: EthSignKeychainState,
+) {
   // Compare configs
   if (localState.config.timestamp < remoteState.config.timestamp) {
     localState.config.timestamp = remoteState.config.timestamp;
     localState.config.address = remoteState.config.address;
     localState.config.encryptionMethod = remoteState.config.encryptionMethod;
   } else if (localState.config.timestamp !== remoteState.config.timestamp) {
-    if (localState.pendingEntries.findIndex((entry: any) => entry.type === 'config') < 0) {
+    // Add config set pending entry (for remote Arweave update) if it doesn't exist yet
+    if (
+      localState.pendingEntries.findIndex(
+        (entry: any) => entry.type === 'config',
+      ) < 0
+    ) {
       await arweaveMutex.runExclusive(async () => {
         localState.pendingEntries.push({
           type: 'config',
@@ -226,7 +242,10 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
   // and remove the pwStates from the remote object.
   for (const key of Object.keys(localState.pwState)) {
     // / Start by checking if there is a difference in neverSave entries
-    if (remoteState.pwState[key] && remoteState.pwState[key].timestamp > localState.pwState[key].timestamp) {
+    if (
+      remoteState.pwState[key] &&
+      remoteState.pwState[key].timestamp > localState.pwState[key].timestamp
+    ) {
       // Remote state is newer
       if (remoteState.pwState[key].neverSave) {
         // Clear local state
@@ -239,9 +258,11 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
       // eslint-disable-next-line no-lonely-if
       if (
         localState.pwState[key].neverSave &&
-        localState.pwState[key].neverSave !== remoteState.pwState[key]?.neverSave &&
+        localState.pwState[key].neverSave !==
+          remoteState.pwState[key]?.neverSave &&
         localState.pendingEntries.findIndex(
-          (entry: any) => entry.type === 'pwStateClear' && entry.payload.url === key,
+          (entry: any) =>
+            entry.type === 'pwStateClear' && entry.payload.url === key,
         ) < 0
       ) {
         // Trigger login removal for key
@@ -257,7 +278,7 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
       }
     }
 
-    // / Check entry by entry for mismatches
+    // Check entry by entry for mismatches
 
     // Iterate through localState's login entries and check them one by one for updates or removals
     const idxToRemove: number[] = [];
@@ -289,9 +310,14 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
           obj.parsed = true;
         }
       } else {
-        // TODO: Upload state remotely
-        // Somehow we have a local state that does not exist remotely, likely with no pending entries
-        // (shouldn't happen unless something magically breaks)
+        // Somehow we have a local state that does not exist remotely, likely with no pending entries (shouldn't
+        // happen unless something magically breaks). Add the localEntry to the pendingEntry array for processing.
+        await arweaveMutex.runExclusive(async () => {
+          localState.pendingEntries.push({
+            type: 'pwStateSet',
+            payload: localEntry,
+          } as any);
+        });
       }
 
       // If we did not find the entry and the localState is stale, remove entry from local state
@@ -329,7 +355,9 @@ async function mergeStates(remoteState: EthSignKeychainState, localState: EthSig
 }
 
 /**
- * Exclusively process all pending transactions.
+ * Exclusively process all pending transactions and upload them to Arweave in batch.
+ *
+ * @returns Promise of void.
  */
 async function processPending() {
   return await arweaveMutex.runExclusive(async () => {
@@ -360,20 +388,30 @@ async function processPending() {
   });
 }
 
+/**
+ * Checks if origin has access to our snap. Prompts user for access confirmation if none exists prior.
+ *
+ * @param origin - Origin string from where RPC messages were sent.
+ * @param state - EthSignKeychainState to process.
+ * @returns Boolean representing access for provided origin, or the current array of origin strings
+ * if the current origin was just approved by the user.
+ */
 async function originHasAccess(origin: string, state: EthSignKeychainState) {
-  if(!state || !state.credentialAccess || !state.credentialAccess.includes(`${origin}`)) {
+  if (!state?.credentialAccess?.includes(`${origin}`)) {
     const showPassword = await snap.request({
       method: 'snap_dialog',
       params: {
         type: 'confirmation',
         content: panel([
           heading('Security Alert'),
-          text(`"${origin}" is requesting access to your credentials. Would you like to proceed?`),
+          text(
+            `"${origin}" is requesting access to your credentials. Would you like to proceed?`,
+          ),
         ]),
       },
     });
 
-    if(showPassword) {
+    if (showPassword) {
       // Update our local approved origin list
       state.credentialAccess.push(origin);
       await savePasswords(state);
@@ -382,12 +420,22 @@ async function originHasAccess(origin: string, state: EthSignKeychainState) {
     }
 
     return state.credentialAccess;
-  } else {
-    return true
   }
+  return true;
 }
 
-async function setNeverSave(state: EthSignKeychainState, website: string, neverSave: boolean) {
+/**
+ * Update snap state for website provided value for neverSave.
+ *
+ * @param state - EthSignKeychainState used for updating.
+ * @param website - Website we are setting neverSave on.
+ * @param neverSave - Boolean value representing whether or not to allow password saving.
+ */
+async function setNeverSave(
+  state: EthSignKeychainState,
+  website: string,
+  neverSave: boolean,
+) {
   let timestamp: number;
   await saveMutex.runExclusive(async () => {
     timestamp = Math.floor(Date.now() / 1000);
@@ -422,15 +470,29 @@ async function setNeverSave(state: EthSignKeychainState, website: string, neverS
   await processPending();
 }
 
-async function setPassword(state: EthSignKeychainState, website: string, username: string, password: string) {
+/**
+ * Update snap state for website provided value for username and password.
+ *
+ * @param state - EthSignKeychainState used for updating.
+ * @param website - Website we are updating password on.
+ * @param username - Username we are setting.
+ * @param password - Password we are setting.
+ */
+async function setPassword(
+  state: EthSignKeychainState,
+  website: string,
+  username: string,
+  password: string,
+) {
   let timestamp: number;
   await saveMutex.runExclusive(async () => {
     timestamp = Math.floor(Date.now() / 1000);
     const newPwState = Object.assign({}, state.pwState);
     let idx = -2;
     if (newPwState[website]) {
-      // idx = _.findIndex(newPwState[website].logins, (e: EthSignKeychainEntry) => e.username === username);
-      idx = newPwState[website].logins.findIndex((e) => e.username === username);
+      idx = newPwState[website].logins.findIndex(
+        (e) => e.username === username,
+      );
     }
 
     if (idx === -2) {
@@ -473,14 +535,27 @@ async function setPassword(state: EthSignKeychainState, website: string, usernam
   await processPending();
 }
 
-async function removePassword(state: EthSignKeychainState, website: string, username: string) {
+/**
+ * Removes a password entry in the snap state for a website provided a username.
+ *
+ * @param state - EthSignKeychainState used for updating.
+ * @param website - Website we are removing a password entry from.
+ * @param username - Username for password entry we are removing.
+ */
+async function removePassword(
+  state: EthSignKeychainState,
+  website: string,
+  username: string,
+) {
   let timestamp: number;
   await saveMutex.runExclusive(async () => {
     timestamp = Math.floor(Date.now() / 1000);
     const newPwState = Object.assign({}, state.pwState);
     let idx = -2;
     if (newPwState[website]) {
-      idx = newPwState[website].logins.findIndex((e) => e.username === username);
+      idx = newPwState[website].logins.findIndex(
+        (e) => e.username === username,
+      );
     }
 
     if (idx >= 0) {
@@ -506,20 +581,27 @@ async function removePassword(state: EthSignKeychainState, website: string, user
   await processPending();
 }
 
+/**
+ * RPC request listener.
+ *
+ * @param options0 - Options given to the function when RPC request is made.
+ * @param options0.origin - String representing the origin of the request.
+ * @param options0.request - Object containing request data.
+ */
 module.exports.onRpcRequest = async ({ origin, request }: any) => {
   // Get the local state for this snap
   const state = await getEthSignKeychainState();
-  
+
   // Make sure the current origin has explicit access to use this snap
-  const oha = await originHasAccess(origin, state)
-  if(!oha) {
-    throw new Error("Access denied.")
+  const oha = await originHasAccess(origin, state);
+  if (!oha) {
+    throw new Error('Access denied.');
   }
 
   // If this origin was just added to the origin access list, oha will be
   // the string array of all origins that have access. Update our state variable
   // to have this updated list.
-  if(typeof(oha) !== "boolean") {
+  if (typeof oha !== 'boolean') {
     state.credentialAccess = oha;
   }
 
@@ -543,12 +625,12 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
     case 'get_password':
       ({ website } = request.params);
       return state.pwState[website];
-      
+
     case 'remove_password':
       ({ website, username } = request.params);
       await removePassword(state, website, username);
       return 'OK';
-      
+
     default:
       throw new Error('Method not found.');
   }
