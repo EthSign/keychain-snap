@@ -40,7 +40,10 @@ export const getSnap = async (version?: string): Promise<Snap | undefined> => {
   try {
     const snaps = await getSnaps();
 
-    return Object.values(snaps).find((snap) => snap.id === defaultSnapOrigin && (!version || snap.version === version));
+    return Object.values(snaps).find(
+      (snap) =>
+        snap.id === defaultSnapOrigin && (!version || snap.version === version),
+    );
   } catch (e) {
     console.log('Failed to obtain installed snap', e);
     return undefined;
@@ -58,7 +61,11 @@ export const sendSet = async () => {
       snapId: defaultSnapOrigin,
       request: {
         method: 'set_password',
-        params: { website: 'localhost:8000', username: 'username', password: 'password' },
+        params: {
+          website: 'localhost:8000',
+          username: 'username',
+          password: 'password',
+        },
       },
     },
   });
@@ -69,7 +76,10 @@ export const sendGet = async () => {
     method: 'wallet_invokeSnap',
     params: {
       snapId: defaultSnapOrigin,
-      request: { method: 'get_password', params: { website: 'localhost:8000' } },
+      request: {
+        method: 'get_password',
+        params: { website: 'localhost:8000' },
+      },
     },
   });
 };
