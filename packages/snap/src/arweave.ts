@@ -78,7 +78,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
               payload: encPayload,
             },
             tags: [
-              { name: 'PublicKey', value: userPublicKey },
+              { name: 'ID', value: userPublicKey },
               { name: 'Application', value: 'EthSignKeychain' },
             ],
           }),
@@ -87,7 +87,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
     };
 
     // messages converted to string before sign with statement prefix
-    const message = `EthSign Keychain is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
+    const message = `EthSign is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
       messagePayload,
       null,
       2,
@@ -108,7 +108,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
         payload: encPayload,
       }),
       tags: [
-        { name: 'PublicKey', value: userPublicKey },
+        { name: 'ID', value: userPublicKey },
         { name: 'Application', value: 'EthSignKeychain' },
       ],
       shouldVerify: true,
@@ -157,7 +157,7 @@ export const getTransactionIdFromStorageUpload = async (
             payload: encPayload,
           },
           tags: [
-            { name: 'PublicKey', value: userPublicKey },
+            { name: 'ID', value: userPublicKey },
             { name: 'Application', value: 'EthSignKeychain' },
           ],
         }),
@@ -166,7 +166,7 @@ export const getTransactionIdFromStorageUpload = async (
   };
 
   // messages converted to string before sign with statement prefix
-  const message = `EthSign Keychain is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
+  const message = `EthSign is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
     messagePayload,
     null,
     2,
@@ -187,7 +187,7 @@ export const getTransactionIdFromStorageUpload = async (
       payload: encPayload,
     }),
     tags: [
-      { name: 'PublicKey', value: userPublicKey },
+      { name: 'ID', value: userPublicKey },
       { name: 'Application', value: 'EthSignKeychain' },
     ],
     shouldVerify: true,
@@ -214,7 +214,7 @@ const getObjectIdFromStorage = async (userPublicKey: string) => {
       {
         transactions(sort: HEIGHT_DESC,
           tags: [
-            { name: "PublicKey", values: ["${userPublicKey}"] },
+            { name: "ID", values: ["${userPublicKey}"] },
             { name: "Application", values: ["EthSignKeychain"] }
           ],
           first: 100${cursor ? `, after: "${cursor}"` : ''}

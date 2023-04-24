@@ -148,11 +148,27 @@ async function savePasswords(newState: EthSignKeychainState) {
 }
 
 /**
+ * Sfdsaf.
+ */
+async function getKey() {
+  const ethNode: any = await snap.request({
+    method: 'snap_getBip44Entropy',
+    params: {
+      coinType: 60,
+    },
+  });
+
+  return ethNode;
+}
+
+/**
  * Sync the provided state with the remote state built from document retrieval on Arweave.
  *
  * @param state - Local state we are updating with fetched remote state.
  */
-async function sync(state: EthSignKeychainState): Promise<void> {
+async function sync(
+  state: EthSignKeychainState,
+): Promise<EthSignKeychainState> {
   // Get internal MetaMask keys
   const ethNode: any = await snap.request({
     method: 'snap_getBip44Entropy',
@@ -163,7 +179,7 @@ async function sync(state: EthSignKeychainState): Promise<void> {
 
   // Failed to get internal keys, so return
   if (!ethNode?.privateKey) {
-    return;
+    return state;
   }
 
   // Get the remote state built on all remote objects
@@ -200,6 +216,8 @@ async function sync(state: EthSignKeychainState): Promise<void> {
 
   // Add changes to pendingState and call processPending()
   await processPending();
+
+  return state;
 }
 
 /**
@@ -215,6 +233,11 @@ async function mergeStates(
 ) {
   // Compare configs
   if (localState.config.timestamp < remoteState.config.timestamp) {
+    // Update local main timestamp variable if remote config is newer
+    if (localState.timestamp < remoteState.config.timestamp) {
+      localState.timestamp = remoteState.config.timestamp;
+    }
+
     localState.config.timestamp = remoteState.config.timestamp;
     localState.config.address = remoteState.config.address;
     localState.config.encryptionMethod = remoteState.config.encryptionMethod;
@@ -238,15 +261,20 @@ async function mergeStates(
     }
   }
 
+  const localKeys = Object.keys(localState.pwState);
   // Iterate through local state. Update existing pwStates with remote object (if timestamp greater)
   // and remove the pwStates from the remote object.
-  for (const key of Object.keys(localState.pwState)) {
+  for (const key of localKeys) {
     // / Start by checking if there is a difference in neverSave entries
     if (
       remoteState.pwState[key] &&
       remoteState.pwState[key].timestamp > localState.pwState[key].timestamp
     ) {
       // Remote state is newer
+      if (remoteState.pwState[key].timestamp > localState.timestamp) {
+        localState.timestamp = remoteState.pwState[key].timestamp;
+      }
+
       if (remoteState.pwState[key].neverSave) {
         // Clear local state
         localState.pwState[key].logins = [];
@@ -291,6 +319,10 @@ async function mergeStates(
             found = true;
             if (obj.timestamp > localEntry.timestamp) {
               // Remote entry is newer
+              if (obj.timestamp > localState.timestamp) {
+                localState.timestamp = obj.timestamp;
+              }
+
               localEntry.password = obj.password;
               localEntry.address = obj.address;
               localEntry.timestamp = obj.timestamp;
@@ -322,6 +354,9 @@ async function mergeStates(
 
       // If we did not find the entry and the localState is stale, remove entry from local state
       if (!found && remoteState.timestamp > localState.timestamp) {
+        if (localState.timestamp < remoteState.timestamp) {
+          localState.timestamp = remoteState.timestamp;
+        }
         idxToRemove.unshift(idx);
       }
     }
@@ -351,6 +386,17 @@ async function mergeStates(
     }
   }
 
+  for (const key of Object.keys(remoteState.pwState)) {
+    const idx = localKeys.indexOf(key);
+    if (idx < 0) {
+      localState.pwState[key] = remoteState.pwState[key];
+    }
+  }
+
+  if (remoteState.timestamp > localState.timestamp) {
+    localState.timestamp = remoteState.timestamp;
+  }
+
   return localState;
 }
 
@@ -370,6 +416,10 @@ async function processPending() {
     });
 
     if (!ethNode?.privateKey) {
+      return;
+    }
+
+    if (!state?.pendingEntries || state.pendingEntries.length === 0) {
       return;
     }
 
@@ -609,9 +659,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   let website: string, username: string, password: string, neverSave: boolean;
   switch (request.method) {
     case 'sync':
-      await sync(state);
-      return 'OK';
-
+      return await sync(state);
     case 'set_neversave':
       ({ website, neverSave } = request.params);
       await setNeverSave(state, website, neverSave);
@@ -630,6 +678,11 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
       ({ website, username } = request.params);
       await removePassword(state, website, username);
       return 'OK';
+
+    // eslint-disable-next-line
+    // @ts-ignore
+    case 'get_key':
+      return getKey();
 
     default:
       throw new Error('Method not found.');

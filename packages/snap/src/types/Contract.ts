@@ -14,7 +14,7 @@ export type StoragePayload = {
   message: string;
   data: string;
   tags: { name: string; value: string }[];
-  shouldVerify: boolean;
+  shouldVerify?: boolean;
 };
 
 export type StorageResponse = {
