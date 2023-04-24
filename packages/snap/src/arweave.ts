@@ -7,7 +7,7 @@ import {
   postUploadBatchToStorage,
   postUploadToStorage,
 } from './misc/storage';
-import { StoragePayload } from './types';
+import { ArweavePayload, StoragePayload } from './types';
 import { EthSignKeychainState, EthSignKeychainEntry } from '.';
 
 /**
@@ -298,15 +298,42 @@ export const getObjectsFromCache = async (
   return objects;
 };
 
+export const getFilesForUser = async (
+  userPublicKey: string,
+): Promise<ArweavePayload[]> => {
+  // Generate a node list for all of the password state entries we need to parse from Arweave and Redis
+  const nodeList: {
+    cursor: string;
+    node: { id: string; block?: { height: number }; timestamp?: number };
+  }[] = (await getObjectIdFromStorage(userPublicKey)).concat(
+    await getObjectsFromCache(userPublicKey),
+  );
+
+  // No nodes to parse (empty state)
+  if (!nodeList || nodeList.length === 0) {
+    return [];
+  }
+
+  // Get ids for all of the nodes we need to parse
+  const idList = nodeList.map((node) => node.node.id);
+
+  // Retrieve all files from arweave given the node idList
+  const files = await batchFetchTxOnArweave(idList);
+
+  return files;
+};
+
 /**
  * Get a list of objects corresponding to the current user from Arweave and Redis.
  *
+ * @param files - List of files {type: string, payload: Object} we retrieved for the userPublicKey.
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
  * @param startingState - The EthSignKeychainState to start building on.
  * @returns List of objects from Arweave and Redis.
  */
 export const getObjectsFromStorage = async (
+  files: any[],
   userPublicKey: string,
   userPrivateKey: string,
   startingState = {
@@ -322,25 +349,6 @@ export const getObjectsFromStorage = async (
     credentialAccess: [],
   } as EthSignKeychainState,
 ): Promise<any | undefined> => {
-  // Generate a node list for all of the password state entries we need to parse from Arweave and Redis
-  const nodeList: {
-    cursor: string;
-    node: { id: string; block?: { height: number }; timestamp?: number };
-  }[] = (await getObjectIdFromStorage(userPublicKey)).concat(
-    await getObjectsFromCache(userPublicKey),
-  );
-
-  // No nodes to parse (empty state)
-  if (!nodeList || nodeList.length === 0) {
-    return startingState;
-  }
-
-  // Get ids for all of the nodes we need to parse
-  const idList = nodeList.map((node) => node.node.id);
-
-  // Retrieve all files from arweave given the node idList
-  const files: any = await batchFetchTxOnArweave(idList);
-
   // Decrypt each payload using user's private key and build our local keychain state
   for (const file of files) {
     /*
@@ -350,6 +358,11 @@ export const getObjectsFromStorage = async (
      *   payload: Object;
      * }
      */
+
+    // Verify we have a valid file object and skip if invalid
+    if (!file?.type || !file.payload) {
+      continue;
+    }
 
     const payload: any = decryptDataArrayFromStringAES(
       file.payload,
@@ -497,6 +510,7 @@ export const getObjectsFromStorage = async (
             }
           }
 
+          // If it is not found, we push the entry
           if (!found) {
             startingState.pwState[payload.url].logins.push({
               timestamp: payload.timestamp,
