@@ -281,6 +281,25 @@ async function mergeStates(
       } else if (localState.pwState[key]?.neverSave) {
         localState.pwState[key].neverSave = false;
       }
+
+      // Iterate through remote login entries and add/update local state to match
+      for (const entry of remoteState.pwState[key].logins) {
+        const idx = localState.pwState[key].logins.findIndex(
+          (e) => e.username === entry.username,
+        );
+        if (
+          idx > 0 &&
+          localState.pwState[key].logins[idx].timestamp < entry.timestamp
+        ) {
+          localState.pwState[key].logins[idx] = entry;
+        } else {
+          localState.pwState[key].logins.push(entry);
+        }
+
+        if (localState.pwState[key].timestamp < entry.timestamp) {
+          localState.pwState[key].timestamp = entry.timestamp;
+        }
+      }
     } else {
       // Local state is newer
       // eslint-disable-next-line no-lonely-if
