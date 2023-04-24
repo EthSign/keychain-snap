@@ -572,7 +572,8 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   let website: string, username: string, password: string, neverSave: boolean;
   switch (request.method) {
     case 'sync':
-      return await sync(state);
+      await sync(state);
+      return 'OK';
     case 'set_neversave':
       ({ website, neverSave } = request.params);
       await setNeverSave(state, website, neverSave);
