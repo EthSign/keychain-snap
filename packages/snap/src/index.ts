@@ -537,11 +537,11 @@ async function processPending() {
       });
 
       if (!ethNode?.privateKey) {
-        return {} as any;
+        return state;
       }
 
       if (!state?.pendingEntries || state.pendingEntries.length === 0) {
-        return {} as any;
+        return state;
       }
 
       const ret: any = JSON.parse(
