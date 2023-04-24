@@ -482,8 +482,14 @@ export const getObjectsFromStorage = async (
               // Update local entry if it has an older timestamp.
               if (login.timestamp < payload.timestamp) {
                 login.password = payload.password;
-                startingState.pwState[payload.url].timestamp =
-                  payload.timestamp;
+
+                if (
+                  startingState.pwState[payload.url].timestamp <
+                  payload.timestamp
+                ) {
+                  startingState.pwState[payload.url].timestamp =
+                    payload.timestamp;
+                }
               }
               found = true;
               break;
