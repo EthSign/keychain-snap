@@ -212,7 +212,7 @@ const getObjectIdFromStorage = async (userPublicKey: string) => {
   while (newCount > 0) {
     const query = `
       {
-        transactions(sort: HEIGHT_DESC,
+        transactions(sort: HEIGHT_ASC,
           tags: [
             { name: "ID", values: ["${userPublicKey}"] },
             { name: "Application", values: ["EthSignKeychain"] }
@@ -482,6 +482,7 @@ export const getObjectsFromStorage = async (
               // Update local entry if it has an older timestamp.
               if (login.timestamp < payload.timestamp) {
                 login.password = payload.password;
+                login.timestamp = payload.timestamp;
 
                 if (
                   startingState.pwState[payload.url].timestamp <

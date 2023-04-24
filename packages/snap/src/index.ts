@@ -188,6 +188,7 @@ async function sync(
     ethNode.privateKey,
     state,
   );
+
   const remoteState = await getObjectsFromStorage(
     ethNode.publicKey,
     ethNode.privateKey,
