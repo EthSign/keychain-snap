@@ -490,10 +490,7 @@ export const getObjectsFromStorage = async (
             }
           }
 
-          if (
-            !found &&
-            startingState.pwState[payload.url].timestamp < payload.timestamp
-          ) {
+          if (!found) {
             startingState.pwState[payload.url].logins.push({
               timestamp: payload.timestamp,
               url: payload.url,
