@@ -283,23 +283,23 @@ async function mergeStates(
       }
 
       // Iterate through remote login entries and add/update local state to match
-      for (const entry of remoteState.pwState[key].logins) {
-        const idx = localState.pwState[key].logins.findIndex(
-          (e) => e.username === entry.username,
-        );
-        if (
-          idx > 0 &&
-          localState.pwState[key].logins[idx].timestamp < entry.timestamp
-        ) {
-          localState.pwState[key].logins[idx] = entry;
-        } else {
-          localState.pwState[key].logins.push(entry);
-        }
+      // for (const entry of remoteState.pwState[key].logins) {
+      //   const idx = localState.pwState[key].logins.findIndex(
+      //     (e) => e.username === entry.username,
+      //   );
+      //   if (
+      //     idx >= 0 &&
+      //     localState.pwState[key].logins[idx].timestamp < entry.timestamp
+      //   ) {
+      //     localState.pwState[key].logins[idx] = entry;
+      //   } else if (idx < 0) {
+      //     localState.pwState[key].logins.push(entry);
+      //   }
 
-        if (localState.pwState[key].timestamp < entry.timestamp) {
-          localState.pwState[key].timestamp = entry.timestamp;
-        }
-      }
+      //   if (localState.pwState[key].timestamp < entry.timestamp) {
+      //     localState.pwState[key].timestamp = entry.timestamp;
+      //   }
+      // }
     } else {
       // Local state is newer
       // eslint-disable-next-line no-lonely-if
@@ -356,9 +356,12 @@ async function mergeStates(
               });
             }
           }
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          obj.parsed = true;
+
+          if (found) {
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore
+            obj.parsed = true;
+          }
         }
       } else {
         // Somehow we have a local state that does not exist remotely, likely with no pending entries (shouldn't
