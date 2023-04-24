@@ -8,7 +8,7 @@ import {
   postUploadToStorage,
 } from './misc/storage';
 import { StoragePayload } from './types';
-import { EthSignKeychainState } from '.';
+import { EthSignKeychainState, EthSignKeychainEntry } from '.';
 
 /**
  * Encrypt an EthSignKeyChainState object using a provided key.
@@ -303,22 +303,13 @@ export const getObjectsFromCache = async (
  *
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
+ * @param startingState - The EthSignKeychainState to start building on.
  * @returns List of objects from Arweave and Redis.
  */
 export const getObjectsFromStorage = async (
   userPublicKey: string,
   userPrivateKey: string,
-): Promise<any | undefined> => {
-  // Generate a node list for all of the password state entries we need to parse from Arweave and Redis
-  const nodeList: {
-    cursor: string;
-    node: { id: string; block?: { height: number }; timestamp?: number };
-  }[] = (await getObjectIdFromStorage(userPublicKey)).concat(
-    await getObjectsFromCache(userPublicKey),
-  );
-
-  // Init a blank EthSignKeychainState object
-  const state: EthSignKeychainState = {
+  startingState = {
     config: {
       address: userPublicKey,
       encryptionMethod: 'BIP-44',
@@ -329,11 +320,19 @@ export const getObjectsFromStorage = async (
     address: userPublicKey,
     timestamp: 0,
     credentialAccess: [],
-  };
+  } as EthSignKeychainState,
+): Promise<any | undefined> => {
+  // Generate a node list for all of the password state entries we need to parse from Arweave and Redis
+  const nodeList: {
+    cursor: string;
+    node: { id: string; block?: { height: number }; timestamp?: number };
+  }[] = (await getObjectIdFromStorage(userPublicKey)).concat(
+    await getObjectsFromCache(userPublicKey),
+  );
 
   // No nodes to parse (empty state)
   if (!nodeList || nodeList.length === 0) {
-    return state;
+    return startingState;
   }
 
   // Get ids for all of the nodes we need to parse
@@ -358,8 +357,8 @@ export const getObjectsFromStorage = async (
     );
 
     // Update global state timestamp
-    if (state.timestamp < payload.timestamp) {
-      state.timestamp = payload.timestamp;
+    if (startingState.timestamp < payload.timestamp) {
+      startingState.timestamp = payload.timestamp;
     }
 
     switch (file.type) {
@@ -370,11 +369,20 @@ export const getObjectsFromStorage = async (
          *   timestamp: number;
          * }
          */
-        if (state.pwState[payload.url]) {
-          state.pwState[payload.url] = {
+        if (
+          startingState.pwState[payload.url] &&
+          startingState.pwState[payload.url].timestamp < payload.timestamp
+        ) {
+          // Remove all entries that existed prior to the pwStateClear event. If there
+          // are 0 entries remaining, then we set neverSave to true because we cleared
+          // the entire state and there are no updates since.
+          const filtered = startingState.pwState[payload.url].logins.filter(
+            (entry) => entry.timestamp > payload.timestamp,
+          );
+          startingState.pwState[payload.url] = {
             timestamp: payload.timestamp,
-            neverSave: true,
-            logins: [],
+            neverSave: filtered.length === 0,
+            logins: filtered,
           };
         }
         break;
@@ -386,17 +394,28 @@ export const getObjectsFromStorage = async (
          *   timestamp: number;
          * }
          */
-        if (state.pwState[payload.url]) {
+        if (startingState.pwState[payload.url]) {
           for (
             let idx = 0;
-            idx < state.pwState[payload.url].logins.length;
+            idx < startingState.pwState[payload.url].logins.length;
             idx++
           ) {
+            // Delete the entry if we find the username and its timestamp is older
+            // than the deletion event.
             if (
-              state.pwState[payload.url].logins[idx].username ===
-              payload.username
+              startingState.pwState[payload.url].logins[idx].username ===
+                payload.username &&
+              startingState.pwState[payload.url].logins[idx].timestamp <
+                payload.timestamp
             ) {
-              state.pwState[payload.url].logins.splice(idx, 1);
+              startingState.pwState[payload.url].logins.splice(idx, 1);
+              // Update the payload url's timestamp in localState if payload has a newer timestamp.
+              if (
+                startingState.pwState[payload.url].timestamp < payload.timestamp
+              ) {
+                startingState.pwState[payload.url].timestamp =
+                  payload.timestamp;
+              }
               break;
             }
           }
@@ -411,12 +430,24 @@ export const getObjectsFromStorage = async (
          *   timestamp: number;
          * }
          */
-        if (state.pwState[payload.url]) {
-          state.pwState[payload.url].neverSave = payload.neverSave;
-          state.pwState[payload.url].logins = [];
-          state.pwState[payload.url].timestamp = payload.timestamp;
+        if (startingState.pwState[payload.url]) {
+          let filtered: EthSignKeychainEntry[] = [];
+          if (payload.neverSave) {
+            filtered = startingState.pwState[payload.url].logins.filter(
+              (entry) => entry.timestamp > payload.timestamp,
+            );
+          }
+          startingState.pwState[payload.url].neverSave = payload.neverSave;
+          startingState.pwState[payload.url].logins = filtered;
+          // Update payload.url's pwState timestamp if payload's timestamp is newer.
+          if (
+            payload.timestamp > startingState.pwState[payload.url].timestamp
+          ) {
+            startingState.pwState[payload.url].timestamp = payload.timestamp;
+          }
         } else {
-          state.pwState[payload.url] = {
+          // Entry does not exist in local state, so we simply need to set it.
+          startingState.pwState[payload.url] = {
             timestamp: payload.timestamp,
             neverSave: payload.neverSave,
             logins: [],
@@ -433,22 +464,37 @@ export const getObjectsFromStorage = async (
          *   timestamp: number;
          * }
          */
-        if (state.pwState[payload.url]) {
-          if (state.pwState[payload.url].neverSave) {
-            state.pwState[payload.url].neverSave = false;
+        if (startingState.pwState[payload.url]) {
+          // State exists locally. Check timestamps.
+          if (
+            startingState.pwState[payload.url].timestamp < payload.timestamp
+          ) {
+            // Clear neverSave if it is set to true on localState's older entry.
+            if (startingState.pwState[payload.url].neverSave) {
+              startingState.pwState[payload.url].neverSave = false;
+            }
           }
+
+          // Find the current password (if it exists).
           let found = false;
-          for (const login of state.pwState[payload.url].logins) {
+          for (const login of startingState.pwState[payload.url].logins) {
             if (login.username === payload.username) {
-              login.password = payload.password;
-              state.pwState[payload.url].timestamp = payload.timestamp;
+              // Update local entry if it has an older timestamp.
+              if (login.timestamp < payload.username) {
+                login.password = payload.password;
+                startingState.pwState[payload.url].timestamp =
+                  payload.timestamp;
+              }
               found = true;
               break;
             }
           }
 
-          if (!found) {
-            state.pwState[payload.url].logins.push({
+          if (
+            !found &&
+            startingState.pwState[payload.url].timestamp < payload.timestamp
+          ) {
+            startingState.pwState[payload.url].logins.push({
               timestamp: payload.timestamp,
               url: payload.url,
               username: payload.username,
@@ -457,7 +503,8 @@ export const getObjectsFromStorage = async (
             });
           }
         } else {
-          state.pwState[payload.url] = {
+          // Locally, the pwState for payload.url does not exist, so we need to create it.
+          startingState.pwState[payload.url] = {
             timestamp: payload.timestamp,
             neverSave: false,
             logins: [
@@ -481,12 +528,14 @@ export const getObjectsFromStorage = async (
          *   timestamp: number;
          * }
          */
-        state.config = payload;
+        if (startingState.config.timestamp < payload.timestamp) {
+          startingState.config = payload;
+        }
         break;
       default:
         break;
     }
   }
 
-  return state;
+  return startingState;
 };

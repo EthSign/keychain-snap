@@ -19,7 +19,7 @@ type EthSignKeychainConfig = {
   encryptionMethod: string; // currently only BIP-44
 } & EthSignKeychainBase;
 
-type EthSignKeychainEntry = {
+export type EthSignKeychainEntry = {
   timestamp: number;
   url: string;
   username: string;
@@ -183,12 +183,18 @@ async function sync(
   }
 
   // Get the remote state built on all remote objects
-  const doc = await getObjectsFromStorage(
+  const localState = await getObjectsFromStorage(
+    ethNode.publicKey,
+    ethNode.privateKey,
+    state,
+  );
+  const remoteState = await getObjectsFromStorage(
     ethNode.publicKey,
     ethNode.privateKey,
   );
   // Merge local state with remote state and get a list of changes that we need to upload remotely
-  const tmpState = await mergeStates(doc, state);
+  // const tmpState = await mergeStates(doc, state);
+  const tmpState = await checkRemoteStatus(localState, remoteState);
 
   // If config has never been initialized, initialize it
   if (!tmpState.config.address || tmpState.config.address === '') {
@@ -215,9 +221,101 @@ async function sync(
   await savePasswords(tmpState);
 
   // Add changes to pendingState and call processPending()
-  await processPending();
 
-  return state;
+  return await processPending();
+}
+
+/**
+ * Create pending entries on the provided local state so that the resulting entries will update the remote state to equivalency.
+ *
+ * @param localState - Our local EthSignKeychainState which has already been updated from the remote state event logs.
+ * @param remoteState - The remote EthSignKeychainState we loaded from Arweave's event logs.
+ * @returns A modified local state with pending entries needed to update the remote state.
+ */
+async function checkRemoteStatus(
+  localState: EthSignKeychainState,
+  remoteState: EthSignKeychainState,
+) {
+  // Check configs
+  if (
+    localState.config.timestamp > remoteState.config.timestamp ||
+    localState.config.address !== remoteState.config.address
+  ) {
+    localState.pendingEntries.push({
+      type: 'config',
+      payload: {
+        timestamp: localState.config.timestamp,
+        address: localState.config.address,
+        encryptionMethod: localState.config.encryptionMethod,
+      },
+    } as any);
+  }
+
+  // Check pwStates
+  for (const key of Object.keys(localState.pwState)) {
+    // Check if local entry is set to never save. If remote state is not set to neverSave,
+    // we will create a pending entry to set it remotely.
+    if (
+      localState.pwState[key].neverSave &&
+      (!remoteState.pwState[key] ||
+        remoteState.pwState[key].neverSave === false)
+    ) {
+      localState.pendingEntries.push({
+        type: 'pwStateNeverSaveSet',
+        payload: {
+          timestamp: localState.pwState[key].timestamp,
+          url: key,
+          neverSave: localState.pwState[key].neverSave,
+        },
+      } as any);
+    }
+
+    // Check if key exists on remote.
+    if (remoteState.pwState[key]) {
+      // If local key exists on remote, check each login entry for existence remotely.
+      for (const entry of localState.pwState[key].logins) {
+        const idx = remoteState.pwState[key].logins.findIndex(
+          (e) => e.username === entry.username,
+        );
+        if (idx >= 0) {
+          // Found. Check timestamps to see if local is newer than remote.
+          if (
+            remoteState.pwState[key].logins[idx].timestamp < entry.timestamp
+          ) {
+            // Local is newer. Update the remote entry.
+            await arweaveMutex.runExclusive(async () => {
+              localState.pendingEntries.push({
+                type: 'pwStateSet',
+                payload: entry,
+              } as any);
+            });
+          }
+        } else {
+          // Not found remotely, but our local version has it. Add it to remote state.
+          // Since our local state was already updated using the remote event logs,
+          // our local state will always be newer, so we always need to add a new entry.
+          await arweaveMutex.runExclusive(async () => {
+            localState.pendingEntries.push({
+              type: 'pwStateSet',
+              payload: entry,
+            } as any);
+          });
+        }
+      }
+    } else {
+      // If key does not exist on remote, add each password entry to remote state.
+      for (const entry of localState.pwState[key].logins) {
+        await arweaveMutex.runExclusive(async () => {
+          localState.pendingEntries.push({
+            type: 'pwStateSet',
+            payload: entry,
+          } as any);
+        });
+      }
+    }
+  }
+
+  return localState;
 }
 
 /**
@@ -227,200 +325,200 @@ async function sync(
  * @param remoteState - Remote state we are merging into local state.
  * @param localState - Local state we are modifying with remote state.
  */
-async function mergeStates(
-  remoteState: EthSignKeychainState,
-  localState: EthSignKeychainState,
-) {
-  // Compare configs
-  if (localState.config.timestamp < remoteState.config.timestamp) {
-    // Update local main timestamp variable if remote config is newer
-    if (localState.timestamp < remoteState.config.timestamp) {
-      localState.timestamp = remoteState.config.timestamp;
-    }
+// async function mergeStates(
+//   remoteState: EthSignKeychainState,
+//   localState: EthSignKeychainState,
+// ) {
+//   // Compare configs
+//   if (localState.config.timestamp < remoteState.config.timestamp) {
+//     // Update local main timestamp variable if remote config is newer
+//     if (localState.timestamp < remoteState.config.timestamp) {
+//       localState.timestamp = remoteState.config.timestamp;
+//     }
 
-    localState.config.timestamp = remoteState.config.timestamp;
-    localState.config.address = remoteState.config.address;
-    localState.config.encryptionMethod = remoteState.config.encryptionMethod;
-  } else if (localState.config.timestamp !== remoteState.config.timestamp) {
-    // Add config set pending entry (for remote Arweave update) if it doesn't exist yet
-    if (
-      localState.pendingEntries.findIndex(
-        (entry: any) => entry.type === 'config',
-      ) < 0
-    ) {
-      await arweaveMutex.runExclusive(async () => {
-        localState.pendingEntries.push({
-          type: 'config',
-          payload: {
-            timestamp: localState.config.timestamp,
-            address: localState.config.address,
-            encryptionMethod: localState.config.encryptionMethod,
-          },
-        } as any);
-      });
-    }
-  }
+//     localState.config.timestamp = remoteState.config.timestamp;
+//     localState.config.address = remoteState.config.address;
+//     localState.config.encryptionMethod = remoteState.config.encryptionMethod;
+//   } else if (localState.config.timestamp !== remoteState.config.timestamp) {
+//     // Add config set pending entry (for remote Arweave update) if it doesn't exist yet
+//     if (
+//       localState.pendingEntries.findIndex(
+//         (entry: any) => entry.type === 'config',
+//       ) < 0
+//     ) {
+//       await arweaveMutex.runExclusive(async () => {
+//         localState.pendingEntries.push({
+//           type: 'config',
+//           payload: {
+//             timestamp: localState.config.timestamp,
+//             address: localState.config.address,
+//             encryptionMethod: localState.config.encryptionMethod,
+//           },
+//         } as any);
+//       });
+//     }
+//   }
 
-  const localKeys = Object.keys(localState.pwState);
-  // Iterate through local state. Update existing pwStates with remote object (if timestamp greater)
-  // and remove the pwStates from the remote object.
-  for (const key of localKeys) {
-    // / Start by checking if there is a difference in neverSave entries
-    if (
-      remoteState.pwState[key] &&
-      remoteState.pwState[key].timestamp > localState.pwState[key].timestamp
-    ) {
-      // Remote state is newer
-      if (remoteState.pwState[key].timestamp > localState.timestamp) {
-        localState.timestamp = remoteState.pwState[key].timestamp;
-      }
+//   const localKeys = Object.keys(localState.pwState);
+//   // Iterate through local state. Update existing pwStates with remote object (if timestamp greater)
+//   // and remove the pwStates from the remote object.
+//   for (const key of localKeys) {
+//     // / Start by checking if there is a difference in neverSave entries
+//     if (
+//       remoteState.pwState[key] &&
+//       remoteState.pwState[key].timestamp > localState.pwState[key].timestamp
+//     ) {
+//       // Remote state is newer
+//       if (remoteState.pwState[key].timestamp > localState.timestamp) {
+//         localState.timestamp = remoteState.pwState[key].timestamp;
+//       }
 
-      if (remoteState.pwState[key].neverSave) {
-        // Clear local state
-        localState.pwState[key].logins = [];
-      } else if (localState.pwState[key]?.neverSave) {
-        localState.pwState[key].neverSave = false;
-      }
+//       if (remoteState.pwState[key].neverSave) {
+//         // Clear local state
+//         localState.pwState[key].logins = [];
+//       } else if (localState.pwState[key]?.neverSave) {
+//         localState.pwState[key].neverSave = false;
+//       }
 
-      // Iterate through remote login entries and add/update local state to match
-      // for (const entry of remoteState.pwState[key].logins) {
-      //   const idx = localState.pwState[key].logins.findIndex(
-      //     (e) => e.username === entry.username,
-      //   );
-      //   if (
-      //     idx >= 0 &&
-      //     localState.pwState[key].logins[idx].timestamp < entry.timestamp
-      //   ) {
-      //     localState.pwState[key].logins[idx] = entry;
-      //   } else if (idx < 0) {
-      //     localState.pwState[key].logins.push(entry);
-      //   }
+//       // Iterate through remote login entries and add/update local state to match
+//       // for (const entry of remoteState.pwState[key].logins) {
+//       //   const idx = localState.pwState[key].logins.findIndex(
+//       //     (e) => e.username === entry.username,
+//       //   );
+//       //   if (
+//       //     idx >= 0 &&
+//       //     localState.pwState[key].logins[idx].timestamp < entry.timestamp
+//       //   ) {
+//       //     localState.pwState[key].logins[idx] = entry;
+//       //   } else if (idx < 0) {
+//       //     localState.pwState[key].logins.push(entry);
+//       //   }
 
-      //   if (localState.pwState[key].timestamp < entry.timestamp) {
-      //     localState.pwState[key].timestamp = entry.timestamp;
-      //   }
-      // }
-    } else {
-      // Local state is newer
-      // eslint-disable-next-line no-lonely-if
-      if (
-        localState.pwState[key].neverSave &&
-        localState.pwState[key].neverSave !==
-          remoteState.pwState[key]?.neverSave &&
-        localState.pendingEntries.findIndex(
-          (entry: any) =>
-            entry.type === 'pwStateClear' && entry.payload.url === key,
-        ) < 0
-      ) {
-        // Trigger login removal for key
-        await arweaveMutex.runExclusive(async () => {
-          localState.pendingEntries.push({
-            type: 'pwStateClear',
-            payload: {
-              url: key,
-              timestamp: localState.pwState[key].timestamp,
-            },
-          } as any);
-        });
-      }
-    }
+//       //   if (localState.pwState[key].timestamp < entry.timestamp) {
+//       //     localState.pwState[key].timestamp = entry.timestamp;
+//       //   }
+//       // }
+//     } else {
+//       // Local state is newer
+//       // eslint-disable-next-line no-lonely-if
+//       if (
+//         localState.pwState[key].neverSave &&
+//         localState.pwState[key].neverSave !==
+//           remoteState.pwState[key]?.neverSave &&
+//         localState.pendingEntries.findIndex(
+//           (entry: any) =>
+//             entry.type === 'pwStateClear' && entry.payload.url === key,
+//         ) < 0
+//       ) {
+//         // Trigger login removal for key
+//         await arweaveMutex.runExclusive(async () => {
+//           localState.pendingEntries.push({
+//             type: 'pwStateClear',
+//             payload: {
+//               url: key,
+//               timestamp: localState.pwState[key].timestamp,
+//             },
+//           } as any);
+//         });
+//       }
+//     }
 
-    // Check entry by entry for mismatches
+//     // Check entry by entry for mismatches
 
-    // Iterate through localState's login entries and check them one by one for updates or removals
-    const idxToRemove: number[] = [];
-    for (let idx = 0; idx < localState.pwState[key].logins.length; idx++) {
-      const localEntry = localState.pwState[key].logins[idx];
-      let found = false;
-      if (remoteState.pwState[key]) {
-        for (const obj of remoteState.pwState[key].logins) {
-          if (obj.username === localEntry.username) {
-            found = true;
-            if (obj.timestamp > localEntry.timestamp) {
-              // Remote entry is newer
-              if (obj.timestamp > localState.timestamp) {
-                localState.timestamp = obj.timestamp;
-              }
+//     // Iterate through localState's login entries and check them one by one for updates or removals
+//     const idxToRemove: number[] = [];
+//     for (let idx = 0; idx < localState.pwState[key].logins.length; idx++) {
+//       const localEntry = localState.pwState[key].logins[idx];
+//       let found = false;
+//       if (remoteState.pwState[key]) {
+//         for (const obj of remoteState.pwState[key].logins) {
+//           if (obj.username === localEntry.username) {
+//             found = true;
+//             if (obj.timestamp > localEntry.timestamp) {
+//               // Remote entry is newer
+//               if (obj.timestamp > localState.timestamp) {
+//                 localState.timestamp = obj.timestamp;
+//               }
 
-              localEntry.password = obj.password;
-              localEntry.address = obj.address;
-              localEntry.timestamp = obj.timestamp;
-              localEntry.url = obj.url;
-            } else if (obj.timestamp !== localEntry.timestamp) {
-              // Local entry is newer
-              await arweaveMutex.runExclusive(async () => {
-                localState.pendingEntries.push({
-                  type: 'pwStateSet',
-                  payload: localEntry,
-                } as any);
-              });
-            }
-          }
+//               localEntry.password = obj.password;
+//               localEntry.address = obj.address;
+//               localEntry.timestamp = obj.timestamp;
+//               localEntry.url = obj.url;
+//             } else if (obj.timestamp !== localEntry.timestamp) {
+//               // Local entry is newer
+//               await arweaveMutex.runExclusive(async () => {
+//                 localState.pendingEntries.push({
+//                   type: 'pwStateSet',
+//                   payload: localEntry,
+//                 } as any);
+//               });
+//             }
+//           }
 
-          if (found) {
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            obj.parsed = true;
-          }
-        }
-      } else {
-        // Somehow we have a local state that does not exist remotely, likely with no pending entries (shouldn't
-        // happen unless something magically breaks). Add the localEntry to the pendingEntry array for processing.
-        await arweaveMutex.runExclusive(async () => {
-          localState.pendingEntries.push({
-            type: 'pwStateSet',
-            payload: localEntry,
-          } as any);
-        });
-      }
+//           if (found) {
+//             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+//             // @ts-ignore
+//             obj.parsed = true;
+//           }
+//         }
+//       } else {
+//         // Somehow we have a local state that does not exist remotely, likely with no pending entries (shouldn't
+//         // happen unless something magically breaks). Add the localEntry to the pendingEntry array for processing.
+//         await arweaveMutex.runExclusive(async () => {
+//           localState.pendingEntries.push({
+//             type: 'pwStateSet',
+//             payload: localEntry,
+//           } as any);
+//         });
+//       }
 
-      // If we did not find the entry and the localState is stale, remove entry from local state
-      if (!found && remoteState.timestamp > localState.timestamp) {
-        if (localState.timestamp < remoteState.timestamp) {
-          localState.timestamp = remoteState.timestamp;
-        }
-        idxToRemove.unshift(idx);
-      }
-    }
+//       // If we did not find the entry and the localState is stale, remove entry from local state
+//       if (!found && remoteState.timestamp > localState.timestamp) {
+//         if (localState.timestamp < remoteState.timestamp) {
+//           localState.timestamp = remoteState.timestamp;
+//         }
+//         idxToRemove.unshift(idx);
+//       }
+//     }
 
-    // Remove all stale entries (highest index first)
-    for (const idx of idxToRemove) {
-      localState.pwState[key].logins.splice(idx, 1);
-    }
+//     // Remove all stale entries (highest index first)
+//     for (const idx of idxToRemove) {
+//       localState.pwState[key].logins.splice(idx, 1);
+//     }
 
-    // Parse remote object for entries that do not exist locally. Add them to local pwState if timestamp
-    // greater than local state's global timestamp.
-    if (remoteState.pwState[key]?.logins) {
-      for (const remoteEntry of remoteState.pwState[key].logins) {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        if (!remoteEntry.parsed) {
-          // We do not have remoteEntry in our localState, so add it
-          localState.pwState[key].logins.push({
-            timestamp: remoteEntry.timestamp,
-            address: remoteEntry.address,
-            username: remoteEntry.username,
-            password: remoteEntry.password,
-            url: remoteEntry.url,
-          });
-        }
-      }
-    }
-  }
+//     // Parse remote object for entries that do not exist locally. Add them to local pwState if timestamp
+//     // greater than local state's global timestamp.
+//     if (remoteState.pwState[key]?.logins) {
+//       for (const remoteEntry of remoteState.pwState[key].logins) {
+//         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+//         // @ts-ignore
+//         if (!remoteEntry.parsed) {
+//           // We do not have remoteEntry in our localState, so add it
+//           localState.pwState[key].logins.push({
+//             timestamp: remoteEntry.timestamp,
+//             address: remoteEntry.address,
+//             username: remoteEntry.username,
+//             password: remoteEntry.password,
+//             url: remoteEntry.url,
+//           });
+//         }
+//       }
+//     }
+//   }
 
-  for (const key of Object.keys(remoteState.pwState)) {
-    const idx = localKeys.indexOf(key);
-    if (idx < 0) {
-      localState.pwState[key] = remoteState.pwState[key];
-    }
-  }
+//   for (const key of Object.keys(remoteState.pwState)) {
+//     const idx = localKeys.indexOf(key);
+//     if (idx < 0) {
+//       localState.pwState[key] = remoteState.pwState[key];
+//     }
+//   }
 
-  if (remoteState.timestamp > localState.timestamp) {
-    localState.timestamp = remoteState.timestamp;
-  }
+//   if (remoteState.timestamp > localState.timestamp) {
+//     localState.timestamp = remoteState.timestamp;
+//   }
 
-  return localState;
-}
+//   return localState;
+// }
 
 /**
  * Exclusively process all pending transactions and upload them to Arweave in batch.
@@ -428,36 +526,40 @@ async function mergeStates(
  * @returns Promise of void.
  */
 async function processPending() {
-  return await arweaveMutex.runExclusive(async () => {
-    const state = await getEthSignKeychainState();
-    const ethNode: any = await snap.request({
-      method: 'snap_getBip44Entropy',
-      params: {
-        coinType: 60,
-      },
-    });
+  return await arweaveMutex.runExclusive(
+    async (): Promise<EthSignKeychainState> => {
+      const state = await getEthSignKeychainState();
+      const ethNode: any = await snap.request({
+        method: 'snap_getBip44Entropy',
+        params: {
+          coinType: 60,
+        },
+      });
 
-    if (!ethNode?.privateKey) {
-      return;
-    }
+      if (!ethNode?.privateKey) {
+        return {} as any;
+      }
 
-    if (!state?.pendingEntries || state.pendingEntries.length === 0) {
-      return;
-    }
+      if (!state?.pendingEntries || state.pendingEntries.length === 0) {
+        return {} as any;
+      }
 
-    const ret: any = JSON.parse(
-      (await getTransactionIdFromStorageUploadBatch(
-        ethNode.publicKey,
-        ethNode.privateKey,
-        state.pendingEntries as any,
-      )) ?? '{}',
-    );
+      const ret: any = JSON.parse(
+        (await getTransactionIdFromStorageUploadBatch(
+          ethNode.publicKey,
+          ethNode.privateKey,
+          state.pendingEntries as any,
+        )) ?? '{}',
+      );
 
-    if (ret?.transaction?.message === 'success') {
-      state.pendingEntries = [];
-      await savePasswords(state);
-    }
-  });
+      if (ret?.transaction?.message === 'success') {
+        state.pendingEntries = [];
+        await savePasswords(state);
+      }
+
+      return state;
+    },
+  );
 }
 
 /**
