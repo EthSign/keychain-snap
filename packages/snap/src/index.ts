@@ -574,6 +574,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
     case 'sync':
       await sync(state);
       return 'OK';
+
     case 'set_neversave':
       ({ website, neverSave } = request.params);
       await setNeverSave(state, website, neverSave);
@@ -592,6 +593,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
       ({ website, username } = request.params);
       await removePassword(state, website, username);
       return 'OK';
+
     default:
       throw new Error('Method not found.');
   }

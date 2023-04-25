@@ -289,7 +289,7 @@ export const getObjectsFromCache = async (
     node: { id: string; block?: { height: number }; timestamp?: number };
   }[] = [];
   for (let i = 0; i < response.length; i += 2) {
-    objects.unshift({
+    objects.push({
       cursor: '',
       node: { id: response[i], timestamp: response[i + 1] },
     });

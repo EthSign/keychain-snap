@@ -108,15 +108,21 @@ export const batchFetchTxOnArweave = async (
 
 export const fetchCachedTx = async (
   userPublicKey: string,
-): Promise<ArweavePayload> => {
-  let ret: any;
+): Promise<ArweavePayload[]> => {
+  let ret: any[] = [];
   try {
     await fetch(`${ETHSIGN_API_URL}/cached/${userPublicKey}`, {
       method: 'GET',
       headers: {
         'Cache-Control': 'no-cache',
       },
-    }).then((response: any) => (ret = response.json()));
+    })
+      .then((res) => res.json())
+      .then((response) => {
+        if (response?.set) {
+          ret = response.set;
+        }
+      });
   } catch (err) {
     return ret;
   }
