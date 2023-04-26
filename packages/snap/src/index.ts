@@ -21,20 +21,21 @@ type EthSignKeychainConfig = {
 } & EthSignKeychainBase;
 
 export type EthSignKeychainEntry = {
-  timestamp: number;
   url: string;
   username: string;
   password: string;
 } & EthSignKeychainBase;
 
+type EthSignKeychainPasswordState = {
+  timestamp: number;
+  neverSave: boolean;
+  logins: EthSignKeychainEntry[];
+};
+
 export type EthSignKeychainState = {
   config: EthSignKeychainConfig;
   pwState: {
-    [key: string]: {
-      timestamp: number;
-      neverSave: boolean;
-      logins: EthSignKeychainEntry[];
-    };
+    [key: string]: EthSignKeychainPasswordState;
   }; // unencrypted
   pendingEntries: EthSignKeychainEntry[]; // entries pending sync with Arweave if the network fails
   credentialAccess: string[];
@@ -434,10 +435,10 @@ async function setNeverSave(
 }
 
 /**
- * Update snap state for website provided value for username and password.
+ * Update snap state for the website provided value for username and password.
  *
  * @param state - EthSignKeychainState used for updating.
- * @param website - Website we are updating password on.
+ * @param website - Website we are updating the password on.
  * @param username - Username we are setting.
  * @param password - Password we are setting.
  */
