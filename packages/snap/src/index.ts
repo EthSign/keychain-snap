@@ -274,6 +274,7 @@ async function checkRemoteStatus(
           if (
             remoteState.pwState[key].logins[idx].timestamp < entry.timestamp
           ) {
+            // TODO: Make sure this entry is not already existing in our pendingEntries array
             // Local is newer. Update the remote entry.
             await arweaveMutex.runExclusive(async () => {
               localState.pendingEntries.push({
@@ -283,6 +284,7 @@ async function checkRemoteStatus(
             });
           }
         } else {
+          // TODO: Make sure this entry is not already existing in our pendingEntries array
           // Not found remotely, but our local version has it. Add it to remote state.
           // Since our local state was already updated using the remote event logs,
           // our local state will always be newer, so we always need to add a new entry.
@@ -296,6 +298,7 @@ async function checkRemoteStatus(
       }
     } else {
       // If key does not exist on remote, add each password entry to remote state.
+      // TODO: Make sure this entry is not already existing in our pendingEntries array
       for (const entry of localState.pwState[key].logins) {
         await arweaveMutex.runExclusive(async () => {
           localState.pendingEntries.push({
@@ -463,7 +466,15 @@ async function setPassword(
       newPwState[website] = {
         timestamp,
         neverSave: false,
-        logins: [{ address: '', url: website, username, password, timestamp }],
+        logins: [
+          {
+            address: state?.address ?? '',
+            url: website,
+            username,
+            password,
+            timestamp,
+          },
+        ],
       };
     } else if (idx < 0) {
       // Add username/password pair to current credential entry
@@ -476,6 +487,7 @@ async function setPassword(
     } else {
       // Update password for current credential entry pair
       newPwState[website].logins[idx].password = password;
+      newPwState[website].logins[idx].timestamp = timestamp;
       newPwState[website].timestamp = timestamp;
     }
 
