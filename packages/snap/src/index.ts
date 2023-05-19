@@ -38,12 +38,29 @@ export type EthSignKeychainState = {
     [key: string]: EthSignKeychainPasswordState;
   }; // unencrypted
   pendingEntries: EthSignKeychainEntry[]; // entries pending sync with Arweave if the network fails
-  credentialAccess: string[];
+  credentialAccess: { [origin: string]: boolean };
 } & EthSignKeychainBase;
 
 // Create mutexes for changing our local state object (no dirty writes)
 const saveMutex = new Mutex();
 const arweaveMutex = new Mutex();
+
+/**
+ * Get the snap's complete stored state.
+ *
+ * @returns The complete snap's state.
+ */
+async function getSnapState(): Promise<any | null> {
+  // Get the stored local snap state
+  const state = await snap.request({
+    method: 'snap_manageState',
+    params: {
+      operation: 'get',
+    },
+  });
+
+  return state;
+}
 
 /**
  * Get the EthSignKeychainState stored in MetaMask.
@@ -71,21 +88,16 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       },
       pwState: {},
       pendingEntries: [],
-      credentialAccess: [],
+      credentialAccess: {},
     } as EthSignKeychainState;
   }
 
   // Get the stored local snap state
-  const state = await snap.request({
-    method: 'snap_manageState',
-    params: {
-      operation: 'get',
-    },
-  });
+  const state = await getSnapState();
 
   // Local state doesn't exist or we encounted unexpected error. Return empty state.
   if (
-    !state ||
+    !state?.ethsignKeychainState ||
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     (typeof state === 'object' && state === undefined)
@@ -100,7 +112,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       },
       pwState: {},
       pendingEntries: [],
-      credentialAccess: [],
+      credentialAccess: {},
     } as EthSignKeychainState;
   }
 
@@ -109,7 +121,10 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
     decryptDataArrayFromStringAES(
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      (state?.ethsignKeychainState as string | undefined | null) ?? '',
+      (state.ethsignKeychainState[ethNode.publicKey] as
+        | string
+        | undefined
+        | null) ?? '',
       ethNode.privateKey,
     ) ?? {}
   );
@@ -121,6 +136,11 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
  * @param newState - New state to save in MetaMask's storage.
  */
 async function savePasswords(newState: EthSignKeychainState) {
+  let state = await getSnapState();
+  if (!state) {
+    state = { ethsignKeychainState: {} };
+  }
+
   // Get internal MetaMask keys
   const ethNode: any = await snap.request({
     method: 'snap_getBip44Entropy',
@@ -134,17 +154,17 @@ async function savePasswords(newState: EthSignKeychainState) {
     return;
   }
 
+  state.ethsignKeychainState[ethNode.publicKey] = getEncryptedStringFromBuffer(
+    newState,
+    ethNode.privateKey,
+  );
+
   // The state is automatically encrypted behind the scenes by MetaMask using snap-specific keys
   await snap.request({
     method: 'snap_manageState',
     params: {
       operation: 'update',
-      newState: {
-        ethsignKeychainState: getEncryptedStringFromBuffer(
-          newState,
-          ethNode.privateKey,
-        ),
-      },
+      newState: state,
     },
   });
 }
@@ -360,11 +380,21 @@ async function processPending() {
  *
  * @param origin - Origin string from where RPC messages were sent.
  * @param state - EthSignKeychainState to process.
+ * @param elevated - True if the origin is requesting a password for an external (different) origin.
+ * @param global - Determines if the origin should have access to passwords for all sites (global) or only the current site (local).
  * @returns Boolean representing access for provided origin, or the current array of origin strings
  * if the current origin was just approved by the user.
  */
-async function originHasAccess(origin: string, state: EthSignKeychainState) {
-  if (!state?.credentialAccess?.includes(`${origin}`)) {
+async function originHasAccess(
+  origin: string,
+  state: EthSignKeychainState,
+  elevated: boolean,
+  global: boolean,
+) {
+  const access = state?.credentialAccess
+    ? state.credentialAccess[origin]
+    : undefined;
+  if (access === undefined || (elevated && !access)) {
     const showPassword = await snap.request({
       method: 'snap_dialog',
       params: {
@@ -372,7 +402,9 @@ async function originHasAccess(origin: string, state: EthSignKeychainState) {
         content: panel([
           heading('Security Alert'),
           text(
-            `"${origin}" is requesting access to your credentials. Would you like to proceed?`,
+            `"${origin}" is requesting access to your credentials ${
+              global || elevated ? 'for all sites' : 'for the current site'
+            }. Would you like to proceed?`,
           ),
         ]),
       },
@@ -380,7 +412,8 @@ async function originHasAccess(origin: string, state: EthSignKeychainState) {
 
     if (showPassword) {
       // Update our local approved origin list
-      state.credentialAccess.push(origin);
+      // eslint-disable-next-line require-atomic-updates
+      state.credentialAccess[origin] = global || elevated;
       await savePasswords(state);
     } else {
       return false;
@@ -388,6 +421,7 @@ async function originHasAccess(origin: string, state: EthSignKeychainState) {
 
     return state.credentialAccess;
   }
+
   return true;
 }
 
@@ -557,19 +591,52 @@ async function removePassword(
   await processPending();
 }
 
+const checkAccess = async (
+  origin: string,
+  state: EthSignKeychainState,
+  elevated: boolean,
+  request: any,
+) => {
+  // Make sure the current origin has explicit access to use this snap
+  const oha = await originHasAccess(
+    origin,
+    state,
+    elevated,
+    request?.params?.global ?? false,
+  );
+  if (!oha) {
+    throw new Error('Access denied.');
+  }
+
+  return oha;
+};
+
 /**
  * RPC request listener.
  *
  * @param options0 - Options given to the function when RPC request is made.
  * @param options0.origin - String representing the origin of the request.
- * @param options0.request - Object containing request data.
+ * @param options0.request - Object containing request data. Pass in `global: true` to params to force an elevated permission request (if elevated permissions are not already granted).
  */
 module.exports.onRpcRequest = async ({ origin, request }: any) => {
   // Get the local state for this snap
   const state = await getEthSignKeychainState();
 
-  // Make sure the current origin has explicit access to use this snap
-  const oha = await originHasAccess(origin, state);
+  // Grab relevant values from the request params object.
+  const website: string = request.params?.website ?? '';
+  const username: string = request.params?.username ?? '';
+  const password: string = request.params?.password ?? '';
+  const neverSave: boolean = request.params?.neverSave ?? false;
+
+  // Make sure the current origin has explicit access to use this snap.
+  // "sync" is not an elevated call (no data is exposed). All other calls are
+  // elevated if the requested data does not lie within the request origin.
+  const oha = await checkAccess(
+    origin,
+    state,
+    request.method === 'sync' ? false : website !== origin,
+    request,
+  );
   if (!oha) {
     throw new Error('Access denied.');
   }
@@ -582,28 +649,23 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   }
 
   // Call respective function depending on RPC method
-  let website: string, username: string, password: string, neverSave: boolean;
   switch (request.method) {
     case 'sync':
       await sync(state);
       return 'OK';
 
     case 'set_neversave':
-      ({ website, neverSave } = request.params);
       await setNeverSave(state, website, neverSave);
       return 'OK';
 
     case 'set_password':
-      ({ website, username, password } = request.params);
       await setPassword(state, website, username, password);
       return 'OK';
 
     case 'get_password':
-      ({ website } = request.params);
       return state.pwState[website];
 
     case 'remove_password':
-      ({ website, username } = request.params);
       await removePassword(state, website, username);
       return 'OK';
 

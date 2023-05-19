@@ -346,7 +346,7 @@ export const getObjectsFromStorage = async (
     pwState: {},
     address: userPublicKey,
     timestamp: 0,
-    credentialAccess: [],
+    credentialAccess: {},
   } as EthSignKeychainState,
 ): Promise<any | undefined> => {
   // Decrypt each payload using user's private key and build our local keychain state
