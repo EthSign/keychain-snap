@@ -1,6 +1,6 @@
 {
   "name": "w3ptestsnap",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "w3ptestsnap",
   "repository": {
     "type": "git",
@@ -33,9 +33,9 @@
     "@metamask/eslint-config-nodejs": "^11.1.0",
     "@metamask/eslint-config-typescript": "^11.1.0",
     "@metamask/eth-sig-util": "^5.0.2",
-    "@metamask/snaps-cli": "^0.30.0",
-    "@metamask/snaps-types": "^0.30.0",
-    "@metamask/snaps-ui": "^0.30.0",
+    "@metamask/snaps-cli": "^0.32.2",
+    "@metamask/snaps-types": "^0.32.2",
+    "@metamask/snaps-ui": "^0.32.2",
     "@typescript-eslint/eslint-plugin": "^5.59.0",
     "@typescript-eslint/parser": "^5.59.0",
     "async-mutex": "^0.4.0",

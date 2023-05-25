@@ -1,5 +1,5 @@
 {
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Password manager.",
   "proposedName": "EthSign Keychain",
   "repository": {
@@ -7,7 +7,7 @@
     "url": "https://github.com/MetaMask/template-snap-monorepo.git"
   },
   "source": {
-    "shasum": "izZH6C6u/rs2doX+ZDN7z4N/VJ/BMQN6GCdbgMJUyrQ=",
+    "shasum": "gI7c1msrMPdGiU9hJY4F18DgDTrvBCeDp36KKK7njCA=",
     "location": {
       "npm": {
         "filePath": "dist/bundle.js",
