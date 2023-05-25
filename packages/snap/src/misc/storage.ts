@@ -1,6 +1,5 @@
 import { ArweavePayload, StoragePayload, StorageResponse } from '../types';
 
-// TODO: Change this to use our backend + check endpoints are valid (there may be changes)
 const ETHSIGN_API_URL = 'https://arweave-staging.ethsign.xyz';
 
 export const postUploadToStorage = async (
