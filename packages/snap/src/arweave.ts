@@ -474,6 +474,7 @@ export const getObjectsFromStorage = async (
          *   url: string;
          *   username: string;
          *   password: string;
+         *   controlled: boolean;
          *   timestamp: number;
          * }
          */
@@ -494,6 +495,7 @@ export const getObjectsFromStorage = async (
             if (login.username === payload.username) {
               // Update local entry if it has an older timestamp.
               if (login.timestamp < payload.timestamp) {
+                login.controlled = payload.controlled;
                 login.password = payload.password;
                 login.timestamp = payload.timestamp;
 
@@ -518,6 +520,7 @@ export const getObjectsFromStorage = async (
               username: payload.username,
               password: payload.password,
               address: userPublicKey,
+              controlled: payload.controlled,
             });
           }
         } else {
@@ -532,6 +535,7 @@ export const getObjectsFromStorage = async (
                 username: payload.username,
                 password: payload.password,
                 address: userPublicKey,
+                controlled: payload.controlled,
               },
             ],
           };

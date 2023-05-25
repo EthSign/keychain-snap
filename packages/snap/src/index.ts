@@ -24,6 +24,7 @@ export type EthSignKeychainEntry = {
   url: string;
   username: string;
   password: string;
+  controlled: string | null;
 } & EthSignKeychainBase;
 
 type EthSignKeychainPasswordState = {
@@ -37,7 +38,7 @@ export type EthSignKeychainState = {
   pwState: {
     [key: string]: EthSignKeychainPasswordState;
   }; // unencrypted
-  pendingEntries: EthSignKeychainEntry[]; // entries pending sync with Arweave if the network fails
+  pendingEntries: { type: string; payload: EthSignKeychainEntry }[]; // entries pending sync with Arweave if the network fails
   credentialAccess: { [origin: string]: boolean };
 } & EthSignKeychainBase;
 
@@ -297,10 +298,19 @@ async function checkRemoteStatus(
             // TODO: Make sure this entry is not already existing in our pendingEntries array
             // Local is newer. Update the remote entry.
             await arweaveMutex.runExclusive(async () => {
-              localState.pendingEntries.push({
-                type: 'pwStateSet',
-                payload: entry,
-              } as any);
+              const amidx = localState.pendingEntries.findIndex(
+                (e) =>
+                  e.type === 'pwStateSet' &&
+                  e.payload.username === entry.username &&
+                  e.payload.password === entry.password &&
+                  e.payload.timestamp === entry.timestamp,
+              );
+              if (amidx < 0) {
+                localState.pendingEntries.push({
+                  type: 'pwStateSet',
+                  payload: entry,
+                });
+              }
             });
           }
         } else {
@@ -309,10 +319,19 @@ async function checkRemoteStatus(
           // Since our local state was already updated using the remote event logs,
           // our local state will always be newer, so we always need to add a new entry.
           await arweaveMutex.runExclusive(async () => {
-            localState.pendingEntries.push({
-              type: 'pwStateSet',
-              payload: entry,
-            } as any);
+            const amidx = localState.pendingEntries.findIndex(
+              (e) =>
+                e.type === 'pwStateSet' &&
+                e.payload.username === entry.username &&
+                e.payload.password === entry.password &&
+                e.payload.timestamp === entry.timestamp,
+            );
+            if (amidx < 0) {
+              localState.pendingEntries.push({
+                type: 'pwStateSet',
+                payload: entry,
+              });
+            }
           });
         }
       }
@@ -321,10 +340,19 @@ async function checkRemoteStatus(
       // TODO: Make sure this entry is not already existing in our pendingEntries array
       for (const entry of localState.pwState[key].logins) {
         await arweaveMutex.runExclusive(async () => {
-          localState.pendingEntries.push({
-            type: 'pwStateSet',
-            payload: entry,
-          } as any);
+          const amidx = localState.pendingEntries.findIndex(
+            (e) =>
+              e.type === 'pwStateSet' &&
+              e.payload.username === entry.username &&
+              e.payload.password === entry.password &&
+              e.payload.timestamp === entry.timestamp,
+          );
+          if (amidx < 0) {
+            localState.pendingEntries.push({
+              type: 'pwStateSet',
+              payload: entry,
+            });
+          }
         });
       }
     }
@@ -478,12 +506,14 @@ async function setNeverSave(
  * @param website - Website we are updating the password on.
  * @param username - Username we are setting.
  * @param password - Password we are setting.
+ * @param controlled - Null if entry is not controlled. Origin of API that created this entry if controlled.
  */
 async function setPassword(
   state: EthSignKeychainState,
   website: string,
   username: string,
   password: string,
+  controlled: string | null,
 ) {
   let timestamp: number;
   await saveMutex.runExclusive(async () => {
@@ -507,6 +537,7 @@ async function setPassword(
             username,
             password,
             timestamp,
+            controlled,
           },
         ],
       };
@@ -517,11 +548,13 @@ async function setPassword(
         timestamp,
         username,
         password,
+        controlled,
       });
     } else {
       // Update password for current credential entry pair
       newPwState[website].logins[idx].password = password;
       newPwState[website].logins[idx].timestamp = timestamp;
+      newPwState[website].logins[idx].controlled = controlled;
       newPwState[website].timestamp = timestamp;
     }
 
@@ -537,6 +570,7 @@ async function setPassword(
         url: website,
         username,
         password,
+        controlled,
       },
     } as any);
   });
@@ -627,6 +661,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   const username: string = request.params?.username ?? '';
   const password: string = request.params?.password ?? '';
   const neverSave: boolean = request.params?.neverSave ?? false;
+  const controlled: boolean = request.params?.controlled ?? false;
 
   // Make sure the current origin has explicit access to use this snap.
   // "sync" is not an elevated call (no data is exposed). All other calls are
@@ -659,7 +694,13 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
       return 'OK';
 
     case 'set_password':
-      await setPassword(state, website, username, password);
+      await setPassword(
+        state,
+        website,
+        username,
+        password,
+        controlled ? origin : null,
+      );
       return 'OK';
 
     case 'get_password':
