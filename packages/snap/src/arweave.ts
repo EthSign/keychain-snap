@@ -205,7 +205,7 @@ export const getTransactionIdFromStorageUpload = async (
     });
 
     encPayload = JSON.stringify({ ...payload, signature, message });
-    tags.push({ name: 'Address', value: payload.publicAddress ?? '' });
+    tags.push({ name: 'ID', value: payload.publicAddress ?? '' });
   } else {
     encPayload = getEncryptedStringFromBuffer(payload, userPrivateKey);
   }
@@ -431,7 +431,10 @@ export const getObjectsFromStorage = async (
     const payload: any =
       // eslint-disable-next-line no-nested-ternary
       file.type === 'registry'
-        ? verifyRegistrySignature(file.payload, userPublicKey)
+        ? verifyRegistrySignature(
+            file.payload,
+            JSON.parse(file.payload)?.publicKey,
+          )
           ? JSON.parse(file.payload)
           : undefined
         : decryptDataArrayFromStringAES(file.payload, userPrivateKey);

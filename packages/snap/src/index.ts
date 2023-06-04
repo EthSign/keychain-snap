@@ -206,6 +206,37 @@ async function savePasswords(newState: EthSignKeychainState) {
 }
 
 /**
+ * Get the registry information for a given user address.
+ *
+ * @param address - The address of the user we are retrieving the registry entry for.
+ * @returns User registry object or undefined.
+ */
+async function registry(
+  address: string,
+): Promise<{ publicAddress: string; publicKey: string }> {
+  if (!address) {
+    return {
+      publicAddress: '',
+      publicKey: '',
+    };
+  }
+
+  let files: any = await getFilesForUser(address.toLowerCase());
+  files = files.filter((file: any) => file.type === 'registry');
+
+  const state: EthSignKeychainState = await getObjectsFromStorage(
+    files,
+    '',
+    '',
+  );
+
+  return {
+    publicAddress: state.registry.publicAddress,
+    publicKey: state.registry.publicKey,
+  };
+}
+
+/**
  * Sync the provided state with the remote state built from document retrieval on Arweave.
  *
  * @param state - Local state we are updating with fetched remote state.
@@ -765,6 +796,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   const state = await getEthSignKeychainState();
 
   // Grab relevant values from the request params object.
+  const address: string = request.params?.address ?? '';
   const website: string = request.params?.website ?? '';
   const username: string = request.params?.username ?? '';
   const password: string = request.params?.password ?? '';
@@ -817,6 +849,9 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
     case 'remove_password':
       await removePassword(state, website, username);
       return 'OK';
+
+    case 'registry':
+      return await registry(address);
 
     default:
       throw new Error('Method not found.');
