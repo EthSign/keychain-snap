@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { personalSign } from '@metamask/eth-sig-util';
+import { extractPublicKey, personalSign } from '@metamask/eth-sig-util';
 import CryptoJS from 'crypto-js';
 import {
   batchFetchTxOnArweave,
@@ -38,12 +38,37 @@ export const getEncryptedStringFromBuffer = (
 export const decryptDataArrayFromStringAES = (
   encryptedString: string,
   key = '',
-): EthSignKeychainState => {
+): EthSignKeychainState | undefined => {
   const bytes = CryptoJS.AES.decrypt(encryptedString, key);
-  const decrypted: EthSignKeychainState = JSON.parse(
-    bytes.toString(CryptoJS.enc.Utf8),
-  );
+  let decrypted: EthSignKeychainState | undefined;
+  try {
+    decrypted = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+  } catch (err) {
+    decrypted = undefined;
+  }
   return decrypted;
+};
+
+/**
+ * Decrypt an encrypted string using the provided key.
+ *
+ * @param encryptedString - Encrypted string to decrypt.
+ * @param key - Key used to decrypt the string.
+ * @returns JSON object representing the decrypted string.
+ */
+export const verifyRegistrySignature = (
+  encryptedString: string,
+  key = '',
+): boolean => {
+  const obj = JSON.parse(encryptedString);
+  if (obj?.signature) {
+    return (
+      extractPublicKey({ data: obj.message, signature: obj.signature }) ===
+      key.substring(0, 2) + key.substring(4)
+    );
+  }
+
+  return false;
 };
 
 /**
@@ -61,11 +86,32 @@ export const getTransactionIdFromStorageUploadBatch = async (
 ): Promise<string> => {
   const batchedUploads: StoragePayload[] = [];
   for (const entry of entries) {
+    const tags = [
+      { name: 'ID', value: userPublicKey },
+      { name: 'Application', value: 'EthSignKeychain' },
+    ];
     // prepare message to sign before upload
-    const encPayload = getEncryptedStringFromBuffer(
-      entry.payload,
-      userPrivateKey,
-    );
+    let encPayload: string;
+    if (entry.type === 'registry') {
+      // messages converted to string before sign with statement prefix
+      const message = `EthSign is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
+        entry.payload,
+        null,
+        2,
+      )}`;
+
+      // sign signature with the messages in details
+      const signature = personalSign({
+        data: message,
+        privateKey: Buffer.from(userPrivateKey.substring(2), 'hex'),
+      });
+
+      encPayload = JSON.stringify({ ...entry.payload, signature, message });
+      tags.push({ name: 'ID', value: entry.payload.publicAddress ?? '' });
+    } else {
+      encPayload = getEncryptedStringFromBuffer(entry.payload, userPrivateKey);
+    }
+
     const messagePayload = {
       publicKey: userPublicKey,
       timestamp: new Date().toISOString(),
@@ -77,10 +123,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
               type: entry.type,
               payload: encPayload,
             },
-            tags: [
-              { name: 'ID', value: userPublicKey },
-              { name: 'Application', value: 'EthSignKeychain' },
-            ],
+            tags,
           }),
         )
         .digest('hex'),
@@ -107,10 +150,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
         type: entry.type,
         payload: encPayload,
       }),
-      tags: [
-        { name: 'ID', value: userPublicKey },
-        { name: 'Application', value: 'EthSignKeychain' },
-      ],
+      tags,
       shouldVerify: true,
     };
     batchedUploads.push(storagePayload);
@@ -140,11 +180,36 @@ export const getTransactionIdFromStorageUpload = async (
     | 'pwStateClear'
     | 'pwStateDel'
     | 'pwStateSet'
-    | 'config',
+    | 'config'
+    | 'registry',
   payload: any,
 ) => {
+  const tags = [
+    { name: 'ID', value: userPublicKey },
+    { name: 'Application', value: 'EthSignKeychain' },
+  ];
   // prepare message to sign before upload
-  const encPayload = getEncryptedStringFromBuffer(payload, userPrivateKey);
+  let encPayload: string;
+  if (type === 'registry') {
+    // messages converted to string before sign with statement prefix
+    const message = `EthSign is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
+      payload,
+      null,
+      2,
+    )}`;
+
+    // sign signature with the messages in details
+    const signature = personalSign({
+      data: message,
+      privateKey: Buffer.from(userPrivateKey.substring(2), 'hex'),
+    });
+
+    encPayload = JSON.stringify({ ...payload, signature, message });
+    tags.push({ name: 'Address', value: payload.publicAddress ?? '' });
+  } else {
+    encPayload = getEncryptedStringFromBuffer(payload, userPrivateKey);
+  }
+
   const messagePayload = {
     publicKey: userPublicKey,
     timestamp: new Date().toISOString(),
@@ -156,10 +221,7 @@ export const getTransactionIdFromStorageUpload = async (
             type,
             payload: encPayload,
           },
-          tags: [
-            { name: 'ID', value: userPublicKey },
-            { name: 'Application', value: 'EthSignKeychain' },
-          ],
+          tags,
         }),
       )
       .digest('hex'),
@@ -186,10 +248,7 @@ export const getTransactionIdFromStorageUpload = async (
       type,
       payload: encPayload,
     }),
-    tags: [
-      { name: 'ID', value: userPublicKey },
-      { name: 'Application', value: 'EthSignKeychain' },
-    ],
+    tags,
     shouldVerify: true,
   };
 
@@ -342,6 +401,11 @@ export const getObjectsFromStorage = async (
       encryptionMethod: 'BIP-44',
       timestamp: 0,
     },
+    registry: {
+      publicAddress: '',
+      publicKey: '',
+      timestamp: 0,
+    },
     pendingEntries: [],
     pwState: {},
     address: userPublicKey,
@@ -364,10 +428,17 @@ export const getObjectsFromStorage = async (
       continue;
     }
 
-    const payload: any = decryptDataArrayFromStringAES(
-      file.payload,
-      userPrivateKey,
-    );
+    const payload: any =
+      // eslint-disable-next-line no-nested-ternary
+      file.type === 'registry'
+        ? verifyRegistrySignature(file.payload, userPublicKey)
+          ? JSON.parse(file.payload)
+          : undefined
+        : decryptDataArrayFromStringAES(file.payload, userPrivateKey);
+
+    if (!payload) {
+      continue;
+    }
 
     // Update global state timestamp
     if (startingState.timestamp < payload.timestamp) {
@@ -552,6 +623,18 @@ export const getObjectsFromStorage = async (
          */
         if (startingState.config.timestamp < payload.timestamp) {
           startingState.config = payload;
+        }
+        break;
+      case 'registry':
+        /*
+         * payload: {
+         *   publicAddress: string;
+         *   publicKey: string;
+         *   timestamp: number;
+         * }
+         */
+        if (startingState.registry.timestamp < payload.timestamp) {
+          startingState.registry = payload;
         }
         break;
       default:

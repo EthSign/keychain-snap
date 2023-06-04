@@ -1,6 +1,6 @@
 {
   "name": "w3ptestsnap",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "w3ptestsnap",
   "repository": {
     "type": "git",
@@ -24,6 +24,10 @@
     "lint:misc": "prettier '**/*.json' '**/*.md' '!CHANGELOG.md' --ignore-path .gitignore",
     "serve": "mm-snap serve",
     "start": "mm-snap watch"
+  },
+  "dependencies": {
+    "@metamask/key-tree": "^7.0.0",
+    "@metamask/snaps-ui": "^0.32.2"
   },
   "devDependencies": {
     "@lavamoat/allow-scripts": "^2.3.0",

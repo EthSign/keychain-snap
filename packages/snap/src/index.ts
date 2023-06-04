@@ -10,6 +10,7 @@ import {
   getObjectsFromStorage,
   getTransactionIdFromStorageUploadBatch,
 } from './arweave';
+import { getAddress } from './misc/address';
 
 type EthSignKeychainBase = {
   address?: string;
@@ -19,6 +20,12 @@ type EthSignKeychainBase = {
 type EthSignKeychainConfig = {
   encryptionMethod: string; // currently only BIP-44
 } & EthSignKeychainBase;
+
+type EthSignKeychainRegistry = {
+  publicAddress: string;
+  publicKey: string;
+  timestamp: number;
+};
 
 export type EthSignKeychainEntry = {
   url: string;
@@ -34,6 +41,7 @@ type EthSignKeychainPasswordState = {
 };
 
 export type EthSignKeychainState = {
+  registry: EthSignKeychainRegistry;
   config: EthSignKeychainConfig;
   pwState: {
     [key: string]: EthSignKeychainPasswordState;
@@ -87,6 +95,11 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
         timestamp: 0,
         encryptionMethod: 'BIP-44',
       },
+      registry: {
+        publicAddress: '',
+        publicKey: '',
+        timestamp: 0,
+      },
       pwState: {},
       pendingEntries: [],
       credentialAccess: {},
@@ -111,6 +124,11 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
         timestamp: 0,
         encryptionMethod: 'BIP-44',
       },
+      registry: {
+        publicAddress: '',
+        publicKey: '',
+        timestamp: 0,
+      },
       pwState: {},
       pendingEntries: [],
       credentialAccess: {},
@@ -127,7 +145,24 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
         | undefined
         | null) ?? '',
       ethNode.privateKey,
-    ) ?? {}
+    ) ??
+    ({
+      address: '',
+      timestamp: 0,
+      config: {
+        address: '',
+        timestamp: 0,
+        encryptionMethod: 'BIP-44',
+      },
+      registry: {
+        publicAddress: '',
+        publicKey: '',
+        timestamp: 0,
+      },
+      pwState: {},
+      pendingEntries: [],
+      credentialAccess: {},
+    } as EthSignKeychainState)
   );
 }
 
@@ -209,6 +244,40 @@ async function sync(
   // Merge local state with remote state and get a list of changes that we need to upload remotely
   // const tmpState = await mergeStates(doc, state);
   const tmpState = await checkRemoteStatus(localState, remoteState);
+  const addr = await getAddress();
+
+  // If registry has never been initialized, initialize it
+  if (
+    !tmpState.registry.publicAddress ||
+    tmpState.registry.publicAddress === ''
+  ) {
+    tmpState.registry = {
+      publicAddress: addr,
+      publicKey: ethNode.publicKey,
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+
+    // Add config set pending entry (for remote Arweave update)
+    await arweaveMutex.runExclusive(async () => {
+      const amidx = localState.pendingEntries.findIndex(
+        (e: any) =>
+          e.type === 'registry' &&
+          e.payload.timestamp === tmpState.registry.timestamp &&
+          e.payload.publicAddress === tmpState.registry.publicAddress &&
+          e.payload.publicKey === tmpState.registry.publicKey,
+      );
+      if (amidx < 0) {
+        tmpState.pendingEntries.push({
+          type: 'registry',
+          payload: {
+            timestamp: tmpState.registry.timestamp,
+            publicAddress: tmpState.registry.publicAddress,
+            publicKey: tmpState.registry.publicKey,
+          },
+        } as any);
+      }
+    });
+  }
 
   // If config has never been initialized, initialize it
   if (!tmpState.config.address || tmpState.config.address === '') {
@@ -220,14 +289,23 @@ async function sync(
 
     // Add config set pending entry (for remote Arweave update)
     await arweaveMutex.runExclusive(async () => {
-      tmpState.pendingEntries.push({
-        type: 'config',
-        payload: {
-          timestamp: tmpState.config.timestamp,
-          address: tmpState.config.address,
-          encryptionMethod: tmpState.config.encryptionMethod,
-        },
-      } as any);
+      const amidx = localState.pendingEntries.findIndex(
+        (e: any) =>
+          e.type === 'config' &&
+          e.payload.timestamp === tmpState.config.timestamp &&
+          e.payload.address === tmpState.config.address &&
+          e.payload.encryptionMethod === tmpState.config.encryptionMethod,
+      );
+      if (amidx < 0) {
+        tmpState.pendingEntries.push({
+          type: 'config',
+          payload: {
+            timestamp: tmpState.config.timestamp,
+            address: tmpState.config.address,
+            encryptionMethod: tmpState.config.encryptionMethod,
+          },
+        } as any);
+      }
     });
   }
 
@@ -249,19 +327,52 @@ async function checkRemoteStatus(
   localState: EthSignKeychainState,
   remoteState: EthSignKeychainState,
 ) {
+  // Check registries
+  if (
+    localState.registry.timestamp > remoteState.registry.timestamp ||
+    localState.registry.publicAddress !== remoteState.registry.publicAddress
+  ) {
+    const amidx = localState.pendingEntries.findIndex(
+      (e: any) =>
+        e.type === 'registry' &&
+        e.payload.timestamp === localState.registry.timestamp &&
+        e.payload.publicAddress === localState.registry.publicAddress &&
+        e.payload.publicKey === localState.registry.publicKey,
+    );
+    if (amidx < 0) {
+      localState.pendingEntries.push({
+        type: 'registry',
+        payload: {
+          timestamp: localState.registry.timestamp,
+          publicAddress: localState.registry.publicAddress,
+          publicKey: localState.registry.publicKey,
+        },
+      } as any);
+    }
+  }
+
   // Check configs
   if (
     localState.config.timestamp > remoteState.config.timestamp ||
     localState.config.address !== remoteState.config.address
   ) {
-    localState.pendingEntries.push({
-      type: 'config',
-      payload: {
-        timestamp: localState.config.timestamp,
-        address: localState.config.address,
-        encryptionMethod: localState.config.encryptionMethod,
-      },
-    } as any);
+    const amidx = localState.pendingEntries.findIndex(
+      (e: any) =>
+        e.type === 'config' &&
+        e.payload.timestamp === localState.config.timestamp &&
+        e.payload.address === localState.config.address &&
+        e.payload.encryptionMethod === localState.config.encryptionMethod,
+    );
+    if (amidx < 0) {
+      localState.pendingEntries.push({
+        type: 'config',
+        payload: {
+          timestamp: localState.config.timestamp,
+          address: localState.config.address,
+          encryptionMethod: localState.config.encryptionMethod,
+        },
+      } as any);
+    }
   }
 
   // Check pwStates
