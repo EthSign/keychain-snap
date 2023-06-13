@@ -106,6 +106,10 @@ export const SendSyncButton = (props: ComponentProps<typeof Button>) => {
   return <Button {...props}>Send sync</Button>;
 };
 
+export const SendEncryptButton = (props: ComponentProps<typeof Button>) => {
+  return <Button {...props}>Send dec(enc)</Button>;
+};
+
 export const SendSetNeverSaveButton = (props: ComponentProps<typeof Button>) => {
   return <Button {...props}>Set never save</Button>;
 };

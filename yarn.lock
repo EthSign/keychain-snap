@@ -4603,7 +4603,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/secp256k1@npm:^4.0.1":
+"@types/secp256k1@npm:^4.0.1, @types/secp256k1@npm:^4.0.3":
   version: 4.0.3
   resolution: "@types/secp256k1@npm:4.0.3"
   dependencies:
@@ -8163,6 +8163,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"eciesjs@npm:^0.3.17":
+  version: 0.3.17
+  resolution: "eciesjs@npm:0.3.17"
+  dependencies:
+    "@types/secp256k1": ^4.0.3
+    futoin-hkdf: ^1.5.1
+    secp256k1: ^5.0.0
+  checksum: 8b2b11058104c439010e5acef4c2686623dd08fee9ccd6d9615ae55914e3b547cda0a0bfe377157dd403cc343c7d3821ea0b03b319e8d73cda0cfe5933727ab4
+  languageName: node
+  linkType: hard
+
 "ee-first@npm:1.1.1":
   version: 1.1.1
   resolution: "ee-first@npm:1.1.1"
@@ -9838,6 +9849,13 @@ __metadata:
   version: 1.2.3
   resolution: "functions-have-names@npm:1.2.3"
   checksum: c3f1f5ba20f4e962efb71344ce0a40722163e85bee2101ce25f88214e78182d2d2476aa85ef37950c579eb6cf6ee811c17b3101bb84004bb75655f3e33f3fdb5
+  languageName: node
+  linkType: hard
+
+"futoin-hkdf@npm:^1.5.1":
+  version: 1.5.2
+  resolution: "futoin-hkdf@npm:1.5.2"
+  checksum: a359c7c63b387e77e787ae3a7fda194acadecb1754525d7e6481ab292f5ae3c83f80aa3036a20fc7430407a6c9fbb18419d78d295f1670f3bdd84c7dbba1dc03
   languageName: node
   linkType: hard
 
@@ -15711,6 +15729,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"secp256k1@npm:^5.0.0":
+  version: 5.0.0
+  resolution: "secp256k1@npm:5.0.0"
+  dependencies:
+    elliptic: ^6.5.4
+    node-addon-api: ^5.0.0
+    node-gyp: latest
+    node-gyp-build: ^4.2.0
+  checksum: a0719dff4687c38d385b5e0b7e811c51a4ea24893128be9d097aee99f879eb0ea52582590deb15a49da627a3db23c6b028ad5c9c6ac1fca92ce760153b8cf21c
+  languageName: node
+  linkType: hard
+
 "semver-diff@npm:^3.1.1":
   version: 3.1.1
   resolution: "semver-diff@npm:3.1.1"
@@ -17646,6 +17676,7 @@ __metadata:
     "@typescript-eslint/parser": ^5.59.0
     async-mutex: ^0.4.0
     crypto-js: ^4.1.1
+    eciesjs: ^0.3.17
     eslint: ^8.38.0
     eslint-config-prettier: ^8.1.0
     eslint-plugin-import: ^2.26.0

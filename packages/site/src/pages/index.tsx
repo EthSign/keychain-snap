@@ -5,6 +5,8 @@ import {
   connectSnap,
   getSnap,
   sendClearNeverSaveClick,
+  sendDecrypt,
+  sendEncrypt,
   sendGet,
   sendRemove,
   sendSet,
@@ -23,6 +25,7 @@ import {
   SendSyncButton,
   SendSetNeverSaveButton,
   SendClearNeverSaveButton,
+  SendEncryptButton,
 } from '../components';
 
 const Container = styled.div`
@@ -190,6 +193,16 @@ const Index = () => {
     }
   };
 
+  const handleSendEncryptClick = async () => {
+  try {
+      // console.log(await sendEncrypt());
+      console.log(await sendDecrypt((await sendEncrypt()).data));
+  } catch (e) {
+    console.error(e);
+    dispatch({ type: MetamaskActions.SetError, payload: e });
+  }
+};
+
   return (
     <Container>
       <Heading>
@@ -248,6 +261,7 @@ const Index = () => {
                 <SendSetNeverSaveButton onClick={handleSetNeverSaveClick} disabled={!state.installedSnap} />
                 <SendClearNeverSaveButton onClick={handleClearNeverSaveClick} disabled={!state.installedSnap} />
                 <SendSyncButton onClick={handleSendSyncClick} disabled={!state.installedSnap} />
+                <SendEncryptButton onClick={handleSendEncryptClick} disabled={!state.installedSnap} />
               </>
             ),
           }}

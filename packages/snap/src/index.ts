@@ -3,6 +3,7 @@ import * as types from "@metamask/snaps-types";
 
 import { Mutex } from 'async-mutex';
 import { heading, panel, text } from '@metamask/snaps-ui';
+import { encrypt, decrypt } from 'eciesjs';
 import {
   decryptDataArrayFromStringAES,
   getEncryptedStringFromBuffer,
@@ -785,6 +786,60 @@ const checkAccess = async (
 };
 
 /**
+ * Encrypt a string using a receiver's public key. Fails if receiver's public key cannot be located.
+ *
+ * @param receiverAddress - Address of the receiver that can decrypt the message using their private key.
+ * @param data - String to be encrypted.
+ * @returns Object in format { success, data?, message? }.
+ */
+const eceisEncrypt = async (receiverAddress: string, data: string) => {
+  const receiverRegistry = await registry(receiverAddress);
+
+  if (!receiverRegistry) {
+    return {
+      success: false,
+      message: `Unable to retrieve registry for receiver '${receiverAddress}'.`,
+    };
+  }
+
+  const publicKey = `0x${receiverRegistry.publicKey.substring(4)}`;
+
+  return {
+    success: true,
+    data: encrypt(publicKey, Buffer.from(data)).toString('hex'),
+  };
+};
+
+/**
+ * Decrypts a hex string using the current user's private key.
+ *
+ * @param data - Hex string to be decrypted.
+ * @returns Object in the format { success, data?, message? }.
+ */
+const eceisDecrypt = async (data: string) => {
+  // Get internal MetaMask keys
+  const ethNode: any = await snap.request({
+    method: 'snap_getBip44Entropy',
+    params: {
+      coinType: 60,
+    },
+  });
+
+  // Failed to get internal keys, so return
+  if (!ethNode?.privateKey) {
+    return {
+      success: false,
+      message: 'Unable to retrieve private key for current wallet.',
+    };
+  }
+
+  return {
+    success: true,
+    data: decrypt(ethNode.privateKey, Buffer.from(data, 'hex')).toString(),
+  };
+};
+
+/**
  * RPC request listener.
  *
  * @param options0 - Options given to the function when RPC request is made.
@@ -797,6 +852,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
 
   // Grab relevant values from the request params object.
   const address: string = request.params?.address ?? '';
+  const data: string = request.params?.data ?? '';
   const website: string = request.params?.website ?? '';
   const username: string = request.params?.username ?? '';
   const password: string = request.params?.password ?? '';
@@ -852,6 +908,12 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
 
     case 'registry':
       return await registry(address);
+
+    case 'encrypt':
+      return await eceisEncrypt(address, data);
+
+    case 'decrypt':
+      return await eceisDecrypt(data);
 
     default:
       throw new Error('Method not found.');

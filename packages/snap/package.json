@@ -1,6 +1,6 @@
 {
   "name": "w3ptestsnap",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "w3ptestsnap",
   "repository": {
     "type": "git",
@@ -27,7 +27,8 @@
   },
   "dependencies": {
     "@metamask/key-tree": "^7.0.0",
-    "@metamask/snaps-ui": "^0.32.2"
+    "@metamask/snaps-ui": "^0.32.2",
+    "eciesjs": "^0.3.17"
   },
   "devDependencies": {
     "@lavamoat/allow-scripts": "^2.3.0",

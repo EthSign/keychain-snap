@@ -135,4 +135,33 @@ export const sendSync = async () => {
   });
 };
 
+export const sendEncrypt = async (): Promise<any> => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'encrypt',
+        params: {
+          address: '0x985Eb8f653Ab087d4122F0C1dBc7972dF6B1642B',
+          data: 'this is a test',
+        },
+      },
+    },
+  });
+};
+
+export const sendDecrypt = async (data: string) => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'decrypt',
+        params: { data },
+      },
+    },
+  });
+};
+
 export const isLocalSnap = (snapId: string) => snapId.startsWith('local:');
