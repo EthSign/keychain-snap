@@ -795,7 +795,7 @@ const checkAccess = async (
 const eceisEncrypt = async (receiverAddress: string, data: string) => {
   const receiverRegistry = await registry(receiverAddress);
 
-  if (!receiverRegistry) {
+  if (!receiverRegistry || receiverRegistry.publicKey === '') {
     return {
       success: false,
       message: `Unable to retrieve registry for receiver '${receiverAddress}'.`,
