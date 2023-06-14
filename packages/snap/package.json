@@ -1,7 +1,7 @@
 {
-  "name": "w3ptestsnap",
+  "name": "keychain-snap",
   "version": "0.2.9",
-  "description": "w3ptestsnap",
+  "description": "EthSign Keychain Snap",
   "repository": {
     "type": "git",
     "url": "https://github.com/MetaMask/template-snap-monorepo.git"
