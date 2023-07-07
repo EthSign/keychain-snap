@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { extractPublicKey, personalSign } from '@metamask/eth-sig-util';
+import publicKeyToAddress from 'ethereum-public-key-to-address';
 import CryptoJS from 'crypto-js';
 import {
   batchFetchTxOnArweave,
@@ -53,19 +54,24 @@ export const decryptDataArrayFromStringAES = (
  * Decrypt an encrypted string using the provided key.
  *
  * @param encryptedString - Encrypted string to decrypt.
- * @param key - Key used to decrypt the string.
+ * @param queryAddress - Address that was used to query for a registry entry.
  * @returns JSON object representing the decrypted string.
  */
 export const verifyRegistrySignature = (
   encryptedString: string,
-  key = '',
+  queryAddress = '',
 ): boolean => {
+  const qAddress = queryAddress.toLowerCase();
   const obj = JSON.parse(encryptedString);
   if (obj?.signature) {
-    return (
-      extractPublicKey({ data: obj.message, signature: obj.signature }) ===
-      key.substring(0, 2) + key.substring(4)
-    );
+    const publicKey = extractPublicKey({
+      data: obj.message,
+      signature: obj.signature,
+    });
+    const address = publicKeyToAddress(
+      `${publicKey.substring(0, 2)}04${publicKey.substring(2)}`,
+    ).toLowerCase();
+    return address === qAddress;
   }
 
   return false;
@@ -383,11 +389,28 @@ export const getFilesForUser = async (
 };
 
 /**
+ * Ensures that the signed message's values match the payload's values for a given registry payload.
+ *
+ * @param payload - Registry payload to verify.
+ * @returns True if values match. False otherwise.
+ */
+const isValidMessage = (payload: any) => {
+  const pl = JSON.parse(payload);
+  const msgPayload = JSON.parse(pl.message.slice(119));
+  return (
+    msgPayload.publicKey === pl.publicKey &&
+    msgPayload.publicAddress === pl.publicAddress &&
+    msgPayload.timestamp === pl.timestamp
+  );
+};
+
+/**
  * Get a list of objects corresponding to the current user from Arweave and Redis.
  *
  * @param files - List of files {type: string, payload: Object} we retrieved for the userPublicKey.
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
+ * @param userAddress - Address for validating unencrypted registry entries.
  * @param startingState - The EthSignKeychainState to start building on.
  * @returns List of objects from Arweave and Redis.
  */
@@ -395,6 +418,7 @@ export const getObjectsFromStorage = async (
   files: any[],
   userPublicKey: string,
   userPrivateKey: string,
+  userAddress: string,
   startingState = {
     config: {
       address: userPublicKey,
@@ -431,10 +455,8 @@ export const getObjectsFromStorage = async (
     const payload: any =
       // eslint-disable-next-line no-nested-ternary
       file.type === 'registry'
-        ? verifyRegistrySignature(
-            file.payload,
-            JSON.parse(file.payload)?.publicKey,
-          )
+        ? verifyRegistrySignature(file.payload, userAddress) &&
+          isValidMessage(file.payload)
           ? JSON.parse(file.payload)
           : undefined
         : decryptDataArrayFromStringAES(file.payload, userPrivateKey);

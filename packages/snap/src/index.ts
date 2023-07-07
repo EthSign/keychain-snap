@@ -11,7 +11,7 @@ import {
   getObjectsFromStorage,
   getTransactionIdFromStorageUploadBatch,
 } from './arweave';
-import { getAddress } from './misc/address';
+import { getAddress, getKeys } from './misc/address';
 
 type EthSignKeychainBase = {
   address?: string;
@@ -79,15 +79,10 @@ async function getSnapState(): Promise<any | null> {
  */
 async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
   // Get internal MetaMask keys
-  const ethNode: any = await snap.request({
-    method: 'snap_getBip44Entropy',
-    params: {
-      coinType: 60,
-    },
-  });
+  const keys = await getKeys();
 
   // Failed to get keys so return blank state
-  if (!ethNode?.privateKey) {
+  if (!keys?.privateKey) {
     return {
       address: '',
       timestamp: 0,
@@ -141,11 +136,11 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
     decryptDataArrayFromStringAES(
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      (state.ethsignKeychainState[ethNode.publicKey] as
+      (state.ethsignKeychainState[keys.publicKey] as
         | string
         | undefined
         | null) ?? '',
-      ethNode.privateKey,
+      keys.privateKey,
     ) ??
     ({
       address: '',
@@ -179,21 +174,16 @@ async function savePasswords(newState: EthSignKeychainState) {
   }
 
   // Get internal MetaMask keys
-  const ethNode: any = await snap.request({
-    method: 'snap_getBip44Entropy',
-    params: {
-      coinType: 60,
-    },
-  });
+  const keys = await getKeys();
 
   // Error retrieving user keys, so return
-  if (!ethNode?.privateKey) {
+  if (!keys?.privateKey) {
     return;
   }
 
-  state.ethsignKeychainState[ethNode.publicKey] = getEncryptedStringFromBuffer(
+  state.ethsignKeychainState[keys.publicKey] = getEncryptedStringFromBuffer(
     newState,
-    ethNode.privateKey,
+    keys.privateKey,
   );
 
   // The state is automatically encrypted behind the scenes by MetaMask using snap-specific keys
@@ -225,10 +215,13 @@ async function registry(
   let files: any = await getFilesForUser(address.toLowerCase());
   files = files.filter((file: any) => file.type === 'registry');
 
+  // Registry entries are always unencrypted, so no keys or passwords are required.
   const state: EthSignKeychainState = await getObjectsFromStorage(
     files,
     '',
     '',
+    address,
+    undefined,
   );
 
   return {
@@ -246,38 +239,36 @@ async function sync(
   state: EthSignKeychainState,
 ): Promise<EthSignKeychainState> {
   // Get internal MetaMask keys
-  const ethNode: any = await snap.request({
-    method: 'snap_getBip44Entropy',
-    params: {
-      coinType: 60,
-    },
-  });
+  const keys = await getKeys();
 
   // Failed to get internal keys, so return
-  if (!ethNode?.privateKey) {
+  if (!keys?.privateKey) {
     return state;
   }
 
-  const files = await getFilesForUser(ethNode.publicKey);
+  const files = await getFilesForUser(keys.publicKey);
 
   // Get the remote state built on all remote objects
   const localState = await getObjectsFromStorage(
     files,
-    ethNode.publicKey,
-    ethNode.privateKey,
+    keys.publicKey,
+    keys.privateKey,
+    keys.address,
     state,
   );
 
   const remoteState = await getObjectsFromStorage(
     files,
-    ethNode.publicKey,
-    ethNode.privateKey,
+    keys.publicKey,
+    keys.privateKey,
+    keys.address,
   );
   // Merge local state with remote state and get a list of changes that we need to upload remotely
   // const tmpState = await mergeStates(doc, state);
   const tmpState = await checkRemoteStatus(localState, remoteState);
   const addr = await getAddress();
 
+  const timestamp = Math.floor(Date.now() / 1000);
   // If registry has never been initialized, initialize it
   if (
     !tmpState.registry.publicAddress ||
@@ -285,8 +276,8 @@ async function sync(
   ) {
     tmpState.registry = {
       publicAddress: addr,
-      publicKey: ethNode.publicKey,
-      timestamp: Math.floor(Date.now() / 1000),
+      publicKey: keys.publicKey,
+      timestamp,
     };
 
     // Add config set pending entry (for remote Arweave update)
@@ -314,9 +305,9 @@ async function sync(
   // If config has never been initialized, initialize it
   if (!tmpState.config.address || tmpState.config.address === '') {
     tmpState.config = {
-      address: ethNode.publicKey,
+      address: keys.publicKey,
       encryptionMethod: 'BIP-44',
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp,
     };
 
     // Add config set pending entry (for remote Arweave update)
@@ -510,14 +501,9 @@ async function processPending() {
   return await arweaveMutex.runExclusive(
     async (): Promise<EthSignKeychainState> => {
       const state = await getEthSignKeychainState();
-      const ethNode: any = await snap.request({
-        method: 'snap_getBip44Entropy',
-        params: {
-          coinType: 60,
-        },
-      });
+      const keys = await getKeys();
 
-      if (!ethNode?.privateKey) {
+      if (!keys?.privateKey) {
         return state;
       }
 
@@ -527,8 +513,8 @@ async function processPending() {
 
       const ret: any = JSON.parse(
         (await getTransactionIdFromStorageUploadBatch(
-          ethNode.publicKey,
-          ethNode.privateKey,
+          keys.publicKey,
+          keys.privateKey,
           state.pendingEntries as any,
         )) ?? '{}',
       );
@@ -765,6 +751,15 @@ async function removePassword(
   await processPending();
 }
 
+/**
+ * Check to see if a given origin has access to the local password state.
+ *
+ * @param origin - Origin string from where RPC messages were sent.
+ * @param state - EthSignKeychainState to process.
+ * @param elevated - True if the origin is requesting a password for an external (different) origin.
+ * @param request - The request object.
+ * @returns Origin has access or throws an error.
+ */
 const checkAccess = async (
   origin: string,
   state: EthSignKeychainState,
@@ -818,15 +813,10 @@ const eceisEncrypt = async (receiverAddress: string, data: string) => {
  */
 const eceisDecrypt = async (data: string) => {
   // Get internal MetaMask keys
-  const ethNode: any = await snap.request({
-    method: 'snap_getBip44Entropy',
-    params: {
-      coinType: 60,
-    },
-  });
+  const keys = await getKeys();
 
   // Failed to get internal keys, so return
-  if (!ethNode?.privateKey) {
+  if (!keys?.privateKey) {
     return {
       success: false,
       message: 'Unable to retrieve private key for current wallet.',
@@ -835,7 +825,7 @@ const eceisDecrypt = async (data: string) => {
 
   return {
     success: true,
-    data: decrypt(ethNode.privateKey, Buffer.from(data, 'hex')).toString(),
+    data: decrypt(keys.privateKey, Buffer.from(data, 'hex')).toString(),
   };
 };
 
