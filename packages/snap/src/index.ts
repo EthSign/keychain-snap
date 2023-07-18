@@ -677,9 +677,9 @@ async function setPassword(
         password,
         controlled,
       });
-      
+
       // Update the password state's timestamp if outdated
-      if(newPwState[website].timestamp < timestamp) {
+      if (newPwState[website].timestamp < timestamp) {
         newPwState[website].timestamp = timestamp;
       }
     } else {
@@ -736,7 +736,7 @@ async function removePassword(
 
     if (idx >= 0) {
       newPwState[website].logins.splice(idx, 1);
-      if(newPwState[website].timestamp < timestamp) {
+      if (newPwState[website].timestamp < timestamp) {
         newPwState[website].timestamp = timestamp;
       }
     }

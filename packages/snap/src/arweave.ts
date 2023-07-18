@@ -31,7 +31,9 @@ export const getEncryptedStringFromBuffer = (
   if (!object.timestamp && object.timestamp !== 0) {
     throw new Error('Error encrypting object. Timestamp not available.');
   }
-  const nonce = generateNonce(object.timestamp === 0 ? Math.floor(Date.now() / 1000) : object.timestamp);
+  const nonce = generateNonce(
+    object.timestamp === 0 ? Math.floor(Date.now() / 1000) : object.timestamp,
+  );
   const encryptedString = nacl.secretbox(
     Buffer.from(JSON.stringify(object)),
     nonce,
