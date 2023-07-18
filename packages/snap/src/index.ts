@@ -5,7 +5,7 @@ import { Mutex } from 'async-mutex';
 import { heading, panel, text } from '@metamask/snaps-ui';
 import { encrypt, decrypt } from 'eciesjs';
 import {
-  decryptDataArrayFromStringAES,
+  decryptDataArrayFromString,
   getEncryptedStringFromBuffer,
   getFilesForUser,
   getObjectsFromStorage,
@@ -133,7 +133,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
 
   // Return decrypted state
   return (
-    decryptDataArrayFromStringAES(
+    decryptDataArrayFromString(
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       (state.ethsignKeychainState[keys.publicKey] as
@@ -268,12 +268,12 @@ async function sync(
   const tmpState = await checkRemoteStatus(localState, remoteState);
   const addr = await getAddress();
 
-  const timestamp = Math.floor(Date.now() / 1000);
   // If registry has never been initialized, initialize it
   if (
     !tmpState.registry.publicAddress ||
     tmpState.registry.publicAddress === ''
   ) {
+    const timestamp = Math.floor(Date.now() / 1000);
     tmpState.registry = {
       publicAddress: addr,
       publicKey: keys.publicKey,
@@ -304,6 +304,7 @@ async function sync(
 
   // If config has never been initialized, initialize it
   if (!tmpState.config.address || tmpState.config.address === '') {
+    const timestamp = Math.floor(Date.now() / 1000);
     tmpState.config = {
       address: keys.publicKey,
       encryptionMethod: 'BIP-44',
@@ -676,6 +677,11 @@ async function setPassword(
         password,
         controlled,
       });
+      
+      // Update the password state's timestamp if outdated
+      if(newPwState[website].timestamp < timestamp) {
+        newPwState[website].timestamp = timestamp;
+      }
     } else {
       // Update password for current credential entry pair
       newPwState[website].logins[idx].password = password;
@@ -730,6 +736,9 @@ async function removePassword(
 
     if (idx >= 0) {
       newPwState[website].logins.splice(idx, 1);
+      if(newPwState[website].timestamp < timestamp) {
+        newPwState[website].timestamp = timestamp;
+      }
     }
 
     state.timestamp = timestamp;

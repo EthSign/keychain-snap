@@ -1,6 +1,6 @@
 {
   "name": "keychain-snap",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "EthSign Keychain Snap",
   "repository": {
     "type": "git",
@@ -29,7 +29,8 @@
     "@metamask/key-tree": "^7.0.0",
     "@metamask/snaps-ui": "^0.32.2",
     "eciesjs": "^0.3.17",
-    "ethereum-public-key-to-address": "^0.0.5"
+    "ethereum-public-key-to-address": "^0.0.5",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@lavamoat/allow-scripts": "^2.3.0",
@@ -45,7 +46,6 @@
     "@typescript-eslint/eslint-plugin": "^5.59.0",
     "@typescript-eslint/parser": "^5.59.0",
     "async-mutex": "^0.4.0",
-    "crypto-js": "^4.1.1",
     "eslint": "^8.38.0",
     "eslint-config-prettier": "^8.1.0",
     "eslint-plugin-import": "^2.26.0",

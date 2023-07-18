@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { extractPublicKey, personalSign } from '@metamask/eth-sig-util';
 import publicKeyToAddress from 'ethereum-public-key-to-address';
-import CryptoJS from 'crypto-js';
+import nacl from 'tweetnacl';
 import {
   batchFetchTxOnArweave,
   fetchCachedTx,
@@ -9,24 +9,38 @@ import {
   postUploadToStorage,
 } from './misc/storage';
 import { ArweavePayload, StoragePayload } from './types';
+import {
+  generateNonce,
+  stringToUint8Array,
+  uint8ArrayToString,
+} from './misc/binary';
 import { EthSignKeychainState, EthSignKeychainEntry } from '.';
 
 /**
- * Encrypt an EthSignKeyChainState object using a provided key.
+ * Encrypt a JSON object using a provided key.
  *
- * @param object - EthSignKeychainState object to encrypt.
+ * @param object - JSON object to encrypt.
+ * @param object.timestamp - Timestamp used for encryption nonce creation. Current timestamp used if object.timestamp is 0.
  * @param key - Key used to encrypt the password.
  * @returns Encrypted UTF-8 string of the object.
  */
 export const getEncryptedStringFromBuffer = (
-  object: EthSignKeychainState,
+  object: { timestamp: number; [key: string]: any },
   key: string,
 ): string => {
-  const encryptedString = CryptoJS.AES.encrypt(
-    JSON.stringify(object),
-    key,
-  ).toString();
-  return encryptedString;
+  if (!object.timestamp && object.timestamp !== 0) {
+    throw new Error('Error encrypting object. Timestamp not available.');
+  }
+  const nonce = generateNonce(object.timestamp === 0 ? Math.floor(Date.now() / 1000) : object.timestamp);
+  const encryptedString = nacl.secretbox(
+    Buffer.from(JSON.stringify(object)),
+    nonce,
+    Uint8Array.from(Buffer.from(key.substring(2), 'hex')),
+  );
+  return JSON.stringify({
+    nonce: uint8ArrayToString(nonce),
+    data: uint8ArrayToString(encryptedString),
+  });
 };
 
 /**
@@ -36,18 +50,23 @@ export const getEncryptedStringFromBuffer = (
  * @param key - Key used to decrypt the string.
  * @returns JSON object representing the decrypted string.
  */
-export const decryptDataArrayFromStringAES = (
+export const decryptDataArrayFromString = (
   encryptedString: string,
   key = '',
 ): EthSignKeychainState | undefined => {
-  const bytes = CryptoJS.AES.decrypt(encryptedString, key);
-  let decrypted: EthSignKeychainState | undefined;
   try {
-    decrypted = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+    const obj = JSON.parse(encryptedString);
+    let decrypted: EthSignKeychainState | null | undefined = null;
+    const buffer = nacl.secretbox.open(
+      stringToUint8Array(obj.data),
+      stringToUint8Array(obj.nonce),
+      Uint8Array.from(Buffer.from(key.substring(2), 'hex')),
+    );
+    decrypted = buffer ? JSON.parse(Buffer.from(buffer).toString()) : undefined;
+    return decrypted ?? undefined;
   } catch (err) {
-    decrypted = undefined;
+    return undefined;
   }
-  return decrypted;
 };
 
 /**
@@ -459,7 +478,7 @@ export const getObjectsFromStorage = async (
           isValidMessage(file.payload)
           ? JSON.parse(file.payload)
           : undefined
-        : decryptDataArrayFromStringAES(file.payload, userPrivateKey);
+        : decryptDataArrayFromString(file.payload, userPrivateKey);
 
     if (!payload) {
       continue;
