@@ -21,24 +21,46 @@ import { EthSignKeychainState, EthSignKeychainEntry } from '.';
  *
  * @param object - JSON object to encrypt.
  * @param object.timestamp - Timestamp used for encryption nonce creation. Current timestamp used if object.timestamp is 0.
- * @param key - Key used to encrypt the password.
+ * @param privateKey - Key used to encrypt the password.
+ * @param password - User's password. Can be null.
  * @returns Encrypted UTF-8 string of the object.
  */
 export const getEncryptedStringFromBuffer = (
   object: { timestamp: number; [key: string]: any },
-  key: string,
+  privateKey: string,
+  password: string | null
 ): string => {
   if (!object.timestamp && object.timestamp !== 0) {
     throw new Error('Error encrypting object. Timestamp not available.');
   }
   const nonce = generateNonce(
-    object.timestamp === 0 ? Math.floor(Date.now() / 1000) : object.timestamp,
+    object.timestamp === 0 ? Math.floor(Date.now() / 1000) : object.timestamp
   );
-  const encryptedString = nacl.secretbox(
+  // First layer of encryption is based on the user's private key
+  let key = privateKey;
+  let encryptedString = nacl.secretbox(
     Buffer.from(JSON.stringify(object)),
     nonce,
-    Uint8Array.from(Buffer.from(key.substring(2), 'hex')),
+    Uint8Array.from(Buffer.from(key.substring(2), 'hex'))
   );
+
+  // Second (optional) layer of encryption is based on the user's entered password
+  if (password) {
+    key = createHash('sha256')
+      .update(
+        JSON.stringify({
+          key: privateKey,
+          password,
+          nonce: uint8ArrayToString(nonce),
+        })
+      )
+      .digest('hex');
+    encryptedString = nacl.secretbox(
+      encryptedString,
+      nonce,
+      Uint8Array.from(Buffer.from(key, 'hex'))
+    );
+  }
   return JSON.stringify({
     nonce: uint8ArrayToString(nonce),
     data: uint8ArrayToString(encryptedString),
@@ -49,20 +71,44 @@ export const getEncryptedStringFromBuffer = (
  * Decrypt an encrypted string using the provided key.
  *
  * @param encryptedString - Encrypted string to decrypt.
- * @param key - Key used to decrypt the string.
+ * @param privateKey - Key used to decrypt the string.
+ * @param password - User's password. Can be null.
  * @returns JSON object representing the decrypted string.
  */
 export const decryptDataArrayFromString = (
   encryptedString: string,
-  key = '',
+  privateKey: string,
+  password: string | null
 ): EthSignKeychainState | undefined => {
   try {
     const obj = JSON.parse(encryptedString);
+
+    // Decrypt second (optional) layer of encryption based on user's entered password
+    let buffer: Uint8Array | null = stringToUint8Array(obj.data);
+    let key = privateKey;
+    if (password) {
+      key = createHash('sha256')
+        .update(JSON.stringify({ key: privateKey, password, nonce: obj.nonce }))
+        .digest('hex');
+      const tmpBuf = nacl.secretbox.open(
+        buffer,
+        stringToUint8Array(obj.nonce),
+        Uint8Array.from(Buffer.from(key, 'hex'))
+      );
+      // In case an entry is not dual-encrypted (decryption failed), we will leave the buffer alone
+      // and try to decrypt again using just the user's private key.
+      if (tmpBuf) {
+        buffer = tmpBuf;
+      }
+    }
+
+    // Decrypt first layer of encryption based on user's private key
+    key = privateKey;
     let decrypted: EthSignKeychainState | null | undefined = null;
-    const buffer = nacl.secretbox.open(
-      stringToUint8Array(obj.data),
+    buffer = nacl.secretbox.open(
+      buffer,
       stringToUint8Array(obj.nonce),
-      Uint8Array.from(Buffer.from(key.substring(2), 'hex')),
+      Uint8Array.from(Buffer.from(key.substring(2), 'hex'))
     );
     decrypted = buffer ? JSON.parse(Buffer.from(buffer).toString()) : undefined;
     return decrypted ?? undefined;
@@ -80,7 +126,7 @@ export const decryptDataArrayFromString = (
  */
 export const verifyRegistrySignature = (
   encryptedString: string,
-  queryAddress = '',
+  queryAddress = ''
 ): boolean => {
   const qAddress = queryAddress.toLowerCase();
   const obj = JSON.parse(encryptedString);
@@ -90,7 +136,7 @@ export const verifyRegistrySignature = (
       signature: obj.signature,
     });
     const address = publicKeyToAddress(
-      `${publicKey.substring(0, 2)}04${publicKey.substring(2)}`,
+      `${publicKey.substring(0, 2)}04${publicKey.substring(2)}`
     ).toLowerCase();
     return address === qAddress;
   }
@@ -103,13 +149,15 @@ export const verifyRegistrySignature = (
  *
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
+ * @param password - User's password. Can be null.
  * @param entries - List of entries to parse.
  * @returns Transaction response JSON in a string format.
  */
 export const getTransactionIdFromStorageUploadBatch = async (
   userPublicKey: string,
   userPrivateKey: string,
-  entries: { type: string; payload: any }[],
+  password: string | null,
+  entries: { type: string; payload: any }[]
 ): Promise<string> => {
   const batchedUploads: StoragePayload[] = [];
   for (const entry of entries) {
@@ -124,7 +172,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
       const message = `EthSign is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
         entry.payload,
         null,
-        2,
+        2
       )}`;
 
       // sign signature with the messages in details
@@ -136,7 +184,11 @@ export const getTransactionIdFromStorageUploadBatch = async (
       encPayload = JSON.stringify({ ...entry.payload, signature, message });
       tags.push({ name: 'ID', value: entry.payload.publicAddress ?? '' });
     } else {
-      encPayload = getEncryptedStringFromBuffer(entry.payload, userPrivateKey);
+      encPayload = getEncryptedStringFromBuffer(
+        entry.payload,
+        userPrivateKey,
+        password
+      );
     }
 
     const messagePayload = {
@@ -151,7 +203,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
               payload: encPayload,
             },
             tags,
-          }),
+          })
         )
         .digest('hex'),
     };
@@ -160,7 +212,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
     const message = `EthSign is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
       messagePayload,
       null,
-      2,
+      2
     )}`;
 
     // sign signature with the messages in details
@@ -195,6 +247,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
  *
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
+ * @param password - User's password. Can be null.
  * @param type - Type of entry we are parsing.
  * @param payload - Payload of entry we need to parse.
  * @returns StorageResponse in a string format.
@@ -202,6 +255,7 @@ export const getTransactionIdFromStorageUploadBatch = async (
 export const getTransactionIdFromStorageUpload = async (
   userPublicKey: string,
   userPrivateKey: string,
+  password: string | null,
   type:
     | 'pwStateNeverSaveSet'
     | 'pwStateClear'
@@ -209,7 +263,7 @@ export const getTransactionIdFromStorageUpload = async (
     | 'pwStateSet'
     | 'config'
     | 'registry',
-  payload: any,
+  payload: any
 ) => {
   const tags = [
     { name: 'ID', value: userPublicKey },
@@ -222,7 +276,7 @@ export const getTransactionIdFromStorageUpload = async (
     const message = `EthSign is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
       payload,
       null,
-      2,
+      2
     )}`;
 
     // sign signature with the messages in details
@@ -234,7 +288,11 @@ export const getTransactionIdFromStorageUpload = async (
     encPayload = JSON.stringify({ ...payload, signature, message });
     tags.push({ name: 'ID', value: payload.publicAddress ?? '' });
   } else {
-    encPayload = getEncryptedStringFromBuffer(payload, userPrivateKey);
+    encPayload = getEncryptedStringFromBuffer(
+      payload,
+      userPrivateKey,
+      password
+    );
   }
 
   const messagePayload = {
@@ -249,7 +307,7 @@ export const getTransactionIdFromStorageUpload = async (
             payload: encPayload,
           },
           tags,
-        }),
+        })
       )
       .digest('hex'),
   };
@@ -258,7 +316,7 @@ export const getTransactionIdFromStorageUpload = async (
   const message = `EthSign is requesting your signature to validate the data being uploaded. This action does not incur any gas fees.\n\n~\n\n${JSON.stringify(
     messagePayload,
     null,
-    2,
+    2
   )}`;
 
   // sign signature with the messages in details
@@ -367,7 +425,7 @@ const getObjectIdFromStorage = async (userPublicKey: string) => {
  * @returns List of objects from Redis.
  */
 export const getObjectsFromCache = async (
-  userPublicKey: string,
+  userPublicKey: string
 ): Promise<any | undefined> => {
   const response: any = await fetchCachedTx(userPublicKey);
   const objects: {
@@ -385,14 +443,14 @@ export const getObjectsFromCache = async (
 };
 
 export const getFilesForUser = async (
-  userPublicKey: string,
+  userPublicKey: string
 ): Promise<ArweavePayload[]> => {
   // Generate a node list for all of the password state entries we need to parse from Arweave and Redis
   const nodeList: {
     cursor: string;
     node: { id: string; block?: { height: number }; timestamp?: number };
   }[] = (await getObjectIdFromStorage(userPublicKey)).concat(
-    await getObjectsFromCache(userPublicKey),
+    await getObjectsFromCache(userPublicKey)
   );
 
   // No nodes to parse (empty state)
@@ -432,6 +490,7 @@ const isValidMessage = (payload: any) => {
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
  * @param userAddress - Address for validating unencrypted registry entries.
+ * @param password - User's password. Can be null.
  * @param startingState - The EthSignKeychainState to start building on.
  * @returns List of objects from Arweave and Redis.
  */
@@ -440,6 +499,7 @@ export const getObjectsFromStorage = async (
   userPublicKey: string,
   userPrivateKey: string,
   userAddress: string,
+  password: string | null,
   startingState = {
     config: {
       address: userPublicKey,
@@ -456,7 +516,9 @@ export const getObjectsFromStorage = async (
     address: userPublicKey,
     timestamp: 0,
     credentialAccess: {},
-  } as EthSignKeychainState,
+    password: null,
+    remoteLocation: null,
+  } as EthSignKeychainState
 ): Promise<any | undefined> => {
   // Decrypt each payload using user's private key and build our local keychain state
   for (const file of files) {
@@ -480,7 +542,7 @@ export const getObjectsFromStorage = async (
           isValidMessage(file.payload)
           ? JSON.parse(file.payload)
           : undefined
-        : decryptDataArrayFromString(file.payload, userPrivateKey);
+        : decryptDataArrayFromString(file.payload, userPrivateKey, password);
 
     if (!payload) {
       continue;
@@ -507,7 +569,7 @@ export const getObjectsFromStorage = async (
           // are 0 entries remaining, then we set neverSave to true because we cleared
           // the entire state and there are no updates since.
           const filtered = startingState.pwState[payload.url].logins.filter(
-            (entry) => entry.timestamp > payload.timestamp,
+            (entry) => entry.timestamp > payload.timestamp
           );
           startingState.pwState[payload.url] = {
             timestamp: payload.timestamp,
@@ -564,7 +626,7 @@ export const getObjectsFromStorage = async (
           let filtered: EthSignKeychainEntry[] = [];
           if (payload.neverSave) {
             filtered = startingState.pwState[payload.url].logins.filter(
-              (entry) => entry.timestamp > payload.timestamp,
+              (entry) => entry.timestamp > payload.timestamp
             );
           }
           startingState.pwState[payload.url].neverSave = payload.neverSave;

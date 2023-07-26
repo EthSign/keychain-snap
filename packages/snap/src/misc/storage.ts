@@ -3,7 +3,7 @@ import { ArweavePayload, StoragePayload, StorageResponse } from '../types';
 const ETHSIGN_API_URL = 'https://arweave-staging.ethsign.xyz';
 
 export const postUploadToStorage = async (
-  data: StoragePayload,
+  data: StoragePayload
 ): Promise<StorageResponse | undefined> => {
   let tx: any;
   try {
@@ -35,7 +35,7 @@ export const postUploadToStorage = async (
 };
 
 export const postUploadBatchToStorage = async (
-  data: StoragePayload[],
+  data: StoragePayload[]
 ): Promise<StorageResponse | undefined> => {
   let tx: any;
   try {
@@ -67,7 +67,7 @@ export const postUploadBatchToStorage = async (
 };
 
 export const fetchTxOnArweave = async (
-  txId: string,
+  txId: string
 ): Promise<ArweavePayload> => {
   let ret: any;
   try {
@@ -85,7 +85,7 @@ export const fetchTxOnArweave = async (
 };
 
 export const batchFetchTxOnArweave = async (
-  txIds: string[],
+  txIds: string[]
 ): Promise<ArweavePayload[]> => {
   let ret: any = [];
   try {
@@ -106,7 +106,7 @@ export const batchFetchTxOnArweave = async (
 };
 
 export const fetchCachedTx = async (
-  userPublicKey: string,
+  userPublicKey: string
 ): Promise<ArweavePayload[]> => {
   let ret: any[] = [];
   try {

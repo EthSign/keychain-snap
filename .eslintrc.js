@@ -6,6 +6,8 @@ module.exports = {
 
   extends: ['@metamask/eslint-config'],
 
+  'prettier/prettier': ['error', { endOfLine: 'auto' }],
+
   overrides: [
     {
       files: ['**/*.js'],
