@@ -177,4 +177,16 @@ export const sendRegistry = async (address: string) => {
   });
 };
 
+export const sendExportState = async () => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'export',
+      },
+    },
+  });
+};
+
 export const isLocalSnap = (snapId: string) => snapId.startsWith('local:');

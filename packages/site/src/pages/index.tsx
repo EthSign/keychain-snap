@@ -1,12 +1,13 @@
-import { useContext } from "react";
-import styled from "styled-components";
-import { MetamaskActions, MetaMaskContext } from "../hooks";
+import { useContext } from 'react';
+import styled from 'styled-components';
+import { MetamaskActions, MetaMaskContext } from '../hooks';
 import {
   connectSnap,
   getSnap,
   sendClearNeverSaveClick,
   sendDecrypt,
   sendEncrypt,
+  sendExportState,
   sendGet,
   sendRegistry,
   sendRemove,
@@ -28,6 +29,7 @@ import {
   SendClearNeverSaveButton,
   SendEncryptButton,
   SendRegistryButton,
+  SendExportStateButton,
 } from '../components';
 
 const Container = styled.div`
@@ -197,8 +199,8 @@ const Index = () => {
 
   const handleSendEncryptClick = async () => {
     try {
-        // console.log(await sendEncrypt());
-        console.log(await sendDecrypt((await sendEncrypt()).data));
+      // console.log(await sendEncrypt());
+      console.log(await sendDecrypt((await sendEncrypt()).data));
     } catch (e) {
       console.error(e);
       dispatch({ type: MetamaskActions.SetError, payload: e });
@@ -207,9 +209,20 @@ const Index = () => {
 
   const handleSendRegistryClick = async () => {
     try {
-        // For a failed security check, use 0x985Eb8f653Ab087d4122F0C1dBc7972dF6B1642B
-        // For a successful registry entry, use 0x11ee0cf7235Cb595f68e586E8727287aC2BE540A
-        console.log(await sendRegistry("0x11ee0cf7235Cb595f68e586E8727287aC2BE540A"));
+      // For a failed security check, use 0x985Eb8f653Ab087d4122F0C1dBc7972dF6B1642B
+      // For a successful registry entry, use 0x11ee0cf7235Cb595f68e586E8727287aC2BE540A
+      console.log(
+        await sendRegistry('0x11ee0cf7235Cb595f68e586E8727287aC2BE540A')
+      );
+    } catch (e) {
+      console.error(e);
+      dispatch({ type: MetamaskActions.SetError, payload: e });
+    }
+  };
+
+  const handleSendExportStateClick = async () => {
+    try {
+      console.log(await sendExportState());
     } catch (e) {
       console.error(e);
       dispatch({ type: MetamaskActions.SetError, payload: e });
@@ -245,8 +258,14 @@ const Index = () => {
           <Card
             content={{
               title: 'Connect',
-              description: 'Get started by connecting to and installing the example snap.',
-              button: <ConnectButton onClick={handleConnectClick} disabled={!state.isFlask} />,
+              description:
+                'Get started by connecting to and installing the example snap.',
+              button: (
+                <ConnectButton
+                  onClick={handleConnectClick}
+                  disabled={!state.isFlask}
+                />
+              ),
             }}
             disabled={!state.isFlask}
           />
@@ -257,7 +276,12 @@ const Index = () => {
               title: 'Reconnect',
               description:
                 'While connected to a local running snap this button will always be displayed in order to update the snap if a change is made.',
-              button: <ReconnectButton onClick={handleConnectClick} disabled={!state.installedSnap} />,
+              button: (
+                <ReconnectButton
+                  onClick={handleConnectClick}
+                  disabled={!state.installedSnap}
+                />
+              ),
             }}
             disabled={!state.installedSnap}
           />
@@ -265,29 +289,62 @@ const Index = () => {
         <Card
           content={{
             title: 'Send Hello message',
-            description: 'Display a custom message within a confirmation screen in MetaMask.',
+            description:
+              'Display a custom message within a confirmation screen in MetaMask.',
             button: (
               <>
-                <SendRemoveButton onClick={handleSendRemoveClick} disabled={!state.installedSnap} />
-                <SendSaveButton onClick={handleSendSaveClick} disabled={!state.installedSnap} />
-                <SendGetButton onClick={handleSendGetClick} disabled={!state.installedSnap} />
-                <SendSetNeverSaveButton onClick={handleSetNeverSaveClick} disabled={!state.installedSnap} />
-                <SendClearNeverSaveButton onClick={handleClearNeverSaveClick} disabled={!state.installedSnap} />
-                <SendSyncButton onClick={handleSendSyncClick} disabled={!state.installedSnap} />
-                <SendEncryptButton onClick={handleSendEncryptClick} disabled={!state.installedSnap} />
-                <SendRegistryButton onClick={handleSendRegistryClick} disabled={!state.installedSnap} />
+                <SendRemoveButton
+                  onClick={handleSendRemoveClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendSaveButton
+                  onClick={handleSendSaveClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendGetButton
+                  onClick={handleSendGetClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendSetNeverSaveButton
+                  onClick={handleSetNeverSaveClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendClearNeverSaveButton
+                  onClick={handleClearNeverSaveClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendSyncButton
+                  onClick={handleSendSyncClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendEncryptButton
+                  onClick={handleSendEncryptClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendRegistryButton
+                  onClick={handleSendRegistryClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendExportStateButton
+                  onClick={handleSendExportStateClick}
+                  disabled={!state.installedSnap}
+                />
               </>
             ),
           }}
           disabled={!state.installedSnap}
           fullWidth={
-            state.isFlask && Boolean(state.installedSnap) && !shouldDisplayReconnectButton(state.installedSnap)
+            state.isFlask &&
+            Boolean(state.installedSnap) &&
+            !shouldDisplayReconnectButton(state.installedSnap)
           }
         />
         <Notice>
           <p>
-            Please note that the <b>snap.manifest.json</b> and <b>package.json</b> must be located in the server root
-            directory and the bundle must be hosted at the location specified by the location field.
+            Please note that the <b>snap.manifest.json</b> and{' '}
+            <b>package.json</b> must be located in the server root directory and
+            the bundle must be hosted at the location specified by the location
+            field.
           </p>
         </Notice>
       </CardContainer>

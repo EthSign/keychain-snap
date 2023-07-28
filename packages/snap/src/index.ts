@@ -1,6 +1,6 @@
 // eslint-disable-next-line
 import * as types from '@metamask/snaps-types';
-
+import { createHash } from 'crypto';
 import { Mutex } from 'async-mutex';
 import { heading, panel, text } from '@metamask/snaps-ui';
 import { encrypt, decrypt } from 'eciesjs';
@@ -12,10 +12,23 @@ import {
   getTransactionIdFromStorageUploadBatch,
 } from './arweave';
 import { getAddress, getKeys } from './misc/address';
+import {
+  generateNonce,
+  stringToUint8Array,
+  uint8ArrayToString,
+} from './misc/binary';
+import nacl from 'tweetnacl';
+import {
+  importCredentials,
+  requestPassword,
+  securityAlert,
+  whereToSync,
+} from './misc/popups';
 
 enum RemoteLocation {
   ARWEAVE,
   AWS,
+  NONE,
 }
 
 type EthSignKeychainBase = {
@@ -256,16 +269,7 @@ async function sync(
 ): Promise<EthSignKeychainState> {
   if (state.remoteLocation === null) {
     // Ask user where they want to store their remote passwords.
-    const result = await snap.request({
-      method: 'snap_dialog',
-      params: {
-        type: 'confirmation',
-        content: panel([
-          heading('Where should EthSign Keychain sync from?'),
-          text(`Approve to sync to AWS. Reject to sync to Arweave.`),
-        ]),
-      },
-    });
+    const result = await whereToSync();
 
     state.remoteLocation = result ? RemoteLocation.AWS : RemoteLocation.ARWEAVE;
   }
@@ -543,20 +547,10 @@ async function processPending(remoteEmpty: boolean = false) {
 
       if (remoteEmpty) {
         if (!state.password) {
-          // TODO: Request password from the user.
-          const pass = await snap.request({
-            method: 'snap_dialog',
-            params: {
-              type: 'prompt',
-              content: panel([
-                heading('Enter Password'),
-                text(
-                  'Please create or enter the password associated with EthSign Keychain. Leave the form blank to opt out of a second layer of password encryption.'
-                ),
-              ]),
-              placeholder: 'Password',
-            },
-          });
+          // Request password from the user.
+          const pass = await requestPassword(
+            'Please create or enter the password associated with EthSign Keychain. Leave the form blank to opt out of a second layer of password encryption.'
+          );
           state.password =
             pass && pass.toString().length > 0 ? pass.toString() : null;
         }
@@ -611,20 +605,7 @@ async function originHasAccess(
     ? state.credentialAccess[origin]
     : undefined;
   if (access === undefined || (elevated && !access)) {
-    const showPassword = await snap.request({
-      method: 'snap_dialog',
-      params: {
-        type: 'confirmation',
-        content: panel([
-          heading('Security Alert'),
-          text(
-            `"${origin}" is requesting access to your credentials ${
-              global || elevated ? 'for all sites' : 'for the current site'
-            }. Would you like to proceed?`
-          ),
-        ]),
-      },
-    });
+    const showPassword = await securityAlert(origin, global, elevated);
 
     if (showPassword) {
       // Update our local approved origin list
@@ -900,6 +881,200 @@ const eceisDecrypt = async (data: string) => {
 };
 
 /**
+ * Export the pwState from the current EthSignKeychainState stored locally. Requires user to enter a password for encryption.
+ *
+ * @param state - EthSignKeychainState containing password state we will be exporting.
+ * @returns Object in the format { success: boolean, message?: string, data?: string }
+ */
+const exportState = async (state: EthSignKeychainState) => {
+  if (!state?.pwState || Object.keys(state.pwState).length === 0) {
+    return {
+      success: false,
+      message: 'No credentials to export.',
+    };
+  }
+
+  const pass = await requestPassword();
+  if (!pass) {
+    return {
+      sucess: false,
+      message: 'User rejected request.',
+    };
+  }
+
+  const pwState = { ...state.pwState };
+  const timestamp = Math.floor(Date.now() / 1000);
+  const nonce = generateNonce(timestamp);
+  const key = createHash('sha256')
+    .update(
+      JSON.stringify({
+        pass,
+        nonce: uint8ArrayToString(nonce),
+      })
+    )
+    .digest('hex');
+  const encryptedString = nacl.secretbox(
+    Buffer.from(JSON.stringify(pwState)),
+    nonce,
+    Uint8Array.from(Buffer.from(key, 'hex'))
+  );
+
+  return {
+    success: true,
+    data: JSON.stringify({
+      nonce: uint8ArrayToString(nonce),
+      data: uint8ArrayToString(encryptedString),
+    }),
+  };
+};
+
+/**
+ * Import a user's credential state, which was encrypted and exported into a JSON object containing nonce and data strings.
+ *
+ * @param currentState - The current EthSignKeychainState that we will be merging with or replacing.
+ * @param importedData - The imported and stringified JSON object containing nonce and data strings.
+ * @returns Object in the format { success: boolean, message?: string, data?: EthSignKeychainState }
+ */
+const importState = async (
+  currentState: EthSignKeychainState,
+  importedData: string
+) => {
+  let merge = true;
+  if (currentState.timestamp > 0) {
+    // Ask user if they want to merge or replace their existing password state.
+    const result = await importCredentials();
+    merge = !!result;
+  }
+
+  try {
+    const imported = JSON.parse(importedData);
+    if (!imported.nonce || !imported.data) {
+      return {
+        success: false,
+        message: 'Import failed: invalid or corrupted import file.',
+      };
+    }
+
+    let buffer: Uint8Array | null = stringToUint8Array(imported.data);
+    const pass = await requestPassword();
+    if (!pass) {
+      return {
+        sucess: false,
+        message: 'User rejected request.',
+      };
+    }
+    const key = createHash('sha256')
+      .update(JSON.stringify({ password: pass, nonce: imported.nonce }))
+      .digest('hex');
+    buffer = nacl.secretbox.open(
+      buffer,
+      stringToUint8Array(imported.nonce),
+      Uint8Array.from(Buffer.from(key, 'hex'))
+    );
+    let decrypted: {
+      [x: string]: EthSignKeychainPasswordState;
+    } = {};
+    try {
+      decrypted = buffer ? JSON.parse(Buffer.from(buffer).toString()) : {};
+    } catch (err) {
+      return {
+        sucess: false,
+        message: 'Import failed: unable to decrypt file.',
+      };
+    }
+
+    // Perform merge or replace the local password state.
+    if (merge) {
+      // Perform merge
+      for (const key of Object.keys(decrypted)) {
+        const importedCredential = decrypted[key];
+        if (!currentState.pwState[key]) {
+          // Current state does not contain any credentials for the imported origin
+          currentState.pwState[key] = importedCredential;
+
+          // Check global state timestamp
+          if (currentState.timestamp < importedCredential.timestamp) {
+            currentState.timestamp = importedCredential.timestamp;
+          }
+        } else {
+          // Update data locally depending on the values of neverSave
+          if (
+            importedCredential.neverSave &&
+            currentState.pwState[key].timestamp < importedCredential.timestamp
+          ) {
+            // neverSave has been set on the imported data and is newer than the current state. We will clear all logins.
+            currentState.pwState[key].neverSave = importedCredential.neverSave;
+            currentState.pwState[key].logins = [];
+            currentState.pwState[key].timestamp = importedCredential.timestamp;
+
+            // Check global state timestamp
+            if (currentState.timestamp < importedCredential.timestamp) {
+              currentState.timestamp = importedCredential.timestamp;
+            }
+          } else if (
+            !importedCredential.neverSave &&
+            currentState.pwState[key].neverSave &&
+            importedCredential.timestamp > currentState.pwState[key].timestamp
+          ) {
+            // neverSave is set locally, but not set on the imported data. The timestamp is newer on the imported credentials,
+            // so we will import ONLY the credentials set after the neverSave value was set locally.
+            currentState.pwState[key].neverSave = false;
+            currentState.pwState[key].logins = importedCredential.logins.filter(
+              (item) => item.timestamp > currentState.pwState[key].timestamp
+            );
+            currentState.pwState[key].timestamp = importedCredential.timestamp;
+
+            // Check global state timestamp
+            if (currentState.timestamp < importedCredential.timestamp) {
+              currentState.timestamp = importedCredential.timestamp;
+            }
+          } else {
+            // Never save values match. We will perform a true merge of the data.
+            // Look for each login entry from imported data in the current state.
+            for (const cred of importedCredential.logins) {
+              const idx = currentState.pwState[key].logins.findIndex(
+                (item) =>
+                  item.url === cred.url && item.username === cred.username
+              );
+              if (idx < 0) {
+                // Not found in current state
+                currentState.pwState[key].logins.push(cred);
+              } else if (
+                currentState.pwState[key].logins[idx].timestamp < cred.timestamp
+              ) {
+                // Found but imported credential is newer
+                currentState.pwState[key].logins[idx] = cred;
+              }
+
+              // Check the credential origin timestamp
+              if (cred.timestamp > currentState.pwState[key].timestamp) {
+                currentState.pwState[key].timestamp = cred.timestamp;
+              }
+              // Check current state's global timestamp
+              if (currentState.timestamp < cred.timestamp) {
+                currentState.timestamp = cred.timestamp;
+              }
+            }
+          }
+        }
+      }
+    } else {
+      currentState.pwState = decrypted;
+    }
+
+    return {
+      success: true,
+      data: currentState,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      message: 'Import failed: file could not be parsed.',
+    };
+  }
+};
+
+/**
  * RPC request listener.
  *
  * @param options0 - Options given to the function when RPC request is made.
@@ -925,7 +1100,11 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   const oha = await checkAccess(
     origin,
     state,
-    request.method === 'sync' ? false : website !== origin,
+    request.method === 'sync'
+      ? false
+      : request.method === 'export'
+      ? true
+      : website !== origin,
     request
   );
   if (!oha) {
@@ -940,6 +1119,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   }
 
   // Call respective function depending on RPC method
+  let ret: any;
   switch (request.method) {
     case 'sync':
       return await sync(state);
@@ -974,6 +1154,18 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
 
     case 'decrypt':
       return await eceisDecrypt(data);
+
+    case 'export':
+      return await exportState(state);
+
+    case 'import':
+      ret = await importState(state, data);
+      if (ret.success && ret.data) {
+        await savePasswords(ret.data);
+        return 'OK';
+      } else {
+        return ret;
+      }
 
     default:
       throw new Error('Method not found.');

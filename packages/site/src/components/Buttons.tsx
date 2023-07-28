@@ -1,8 +1,8 @@
-import { ComponentProps } from "react";
-import styled from "styled-components";
-import { MetamaskState } from "../hooks";
-import { ReactComponent as FlaskFox } from "../assets/flask_fox.svg";
-import { shouldDisplayReconnectButton } from "../utils";
+import { ComponentProps } from 'react';
+import styled from 'styled-components';
+import { MetamaskState } from '../hooks';
+import { ReactComponent as FlaskFox } from '../assets/flask_fox.svg';
+import { shouldDisplayReconnectButton } from '../utils';
 
 const Link = styled.a`
   display: flex;
@@ -62,7 +62,7 @@ const ConnectedContainer = styled.div`
 `;
 
 const ConnectedIndicator = styled.div`
-  content: " ";
+  content: ' ';
   width: 10px;
   height: 10px;
   border-radius: 50%;
@@ -114,11 +114,19 @@ export const SendRegistryButton = (props: ComponentProps<typeof Button>) => {
   return <Button {...props}>Send registry</Button>;
 };
 
-export const SendSetNeverSaveButton = (props: ComponentProps<typeof Button>) => {
+export const SendExportStateButton = (props: ComponentProps<typeof Button>) => {
+  return <Button {...props}>Send export</Button>;
+};
+
+export const SendSetNeverSaveButton = (
+  props: ComponentProps<typeof Button>
+) => {
   return <Button {...props}>Set never save</Button>;
 };
 
-export const SendClearNeverSaveButton = (props: ComponentProps<typeof Button>) => {
+export const SendClearNeverSaveButton = (
+  props: ComponentProps<typeof Button>
+) => {
   return <Button {...props}>Clear never save</Button>;
 };
 
@@ -126,7 +134,13 @@ export const SendRemoveButton = (props: ComponentProps<typeof Button>) => {
   return <Button {...props}>Send remove</Button>;
 };
 
-export const HeaderButtons = ({ state, onConnectClick }: { state: MetamaskState; onConnectClick(): unknown }) => {
+export const HeaderButtons = ({
+  state,
+  onConnectClick,
+}: {
+  state: MetamaskState;
+  onConnectClick(): unknown;
+}) => {
   if (!state.isFlask && !state.installedSnap) {
     return <InstallFlaskButton />;
   }
