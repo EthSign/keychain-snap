@@ -886,7 +886,9 @@ const eceisDecrypt = async (data: string) => {
  * @param state - EthSignKeychainState containing password state we will be exporting.
  * @returns Object in the format { success: boolean, message?: string, data?: string }
  */
-const exportState = async (state: EthSignKeychainState) => {
+const exportState = async (
+  state: EthSignKeychainState
+): Promise<{ success: boolean; message?: string; data?: string }> => {
   if (!state?.pwState || Object.keys(state.pwState).length === 0) {
     return {
       success: false,
@@ -897,7 +899,7 @@ const exportState = async (state: EthSignKeychainState) => {
   const pass = await requestPassword();
   if (!pass) {
     return {
-      sucess: false,
+      success: false,
       message: 'User rejected request.',
     };
   }
@@ -938,7 +940,11 @@ const exportState = async (state: EthSignKeychainState) => {
 const importState = async (
   currentState: EthSignKeychainState,
   importedData: string
-) => {
+): Promise<{
+  success: boolean;
+  message?: string;
+  data?: EthSignKeychainState;
+}> => {
   let merge = true;
   if (currentState.timestamp > 0) {
     // Ask user if they want to merge or replace their existing password state.
@@ -959,7 +965,7 @@ const importState = async (
     const pass = await requestPassword();
     if (!pass) {
       return {
-        sucess: false,
+        success: false,
         message: 'User rejected request.',
       };
     }
@@ -978,7 +984,7 @@ const importState = async (
       decrypted = buffer ? JSON.parse(Buffer.from(buffer).toString()) : {};
     } catch (err) {
       return {
-        sucess: false,
+        success: false,
         message: 'Import failed: unable to decrypt file.',
       };
     }
