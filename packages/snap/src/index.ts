@@ -1168,7 +1168,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
       ret = await importState(state, data);
       if (ret.success && ret.data) {
         await savePasswords(ret.data);
-        return 'OK';
+        return { success: true, message: 'OK' };
       } else {
         return ret;
       }

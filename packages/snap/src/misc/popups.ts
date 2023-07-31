@@ -1,4 +1,81 @@
-import { heading, panel, text } from '@metamask/snaps-ui';
+import { NodeType, Panel, heading, panel, text } from '@metamask/snaps-ui';
+
+/**
+ * Creates a MetaMask confirmation dialog window.
+ *
+ * @param content - Panel to be displayed in the confirmation dialog.
+ * @returns True/false depending on user interaction.
+ */
+export async function metamaskConfirmation(
+  content:
+    | Panel
+    | {
+        value: string;
+        type: NodeType.Copyable;
+      }
+    | {
+        type: NodeType.Divider;
+      }
+    | {
+        value: string;
+        type: NodeType.Heading;
+      }
+    | {
+        type: NodeType.Spinner;
+      }
+    | {
+        value: string;
+        type: NodeType.Text;
+      }
+) {
+  return await snap.request({
+    method: 'snap_dialog',
+    params: {
+      type: 'confirmation',
+      content: content,
+    },
+  });
+}
+
+/**
+ * Creates a MetaMask prompt dialog window.
+ *
+ * @param content - Panel to be displayed in the prompt dialog.
+ * @param placeholder - Placeholder value to be shown in the input of the form.
+ * @returns Value provided in the input by the user.
+ */
+export async function metamaskPrompt(
+  content:
+    | Panel
+    | {
+        value: string;
+        type: NodeType.Copyable;
+      }
+    | {
+        type: NodeType.Divider;
+      }
+    | {
+        value: string;
+        type: NodeType.Heading;
+      }
+    | {
+        type: NodeType.Spinner;
+      }
+    | {
+        value: string;
+        type: NodeType.Text;
+      },
+  placeholder: string
+) {
+  return await snap.request({
+    method: 'snap_dialog',
+    params: {
+      type: 'prompt',
+      content: content,
+      placeholder: placeholder,
+    },
+  });
+}
 
 /**
  * Request password from the user using a MetaMask popup.
@@ -9,14 +86,10 @@ import { heading, panel, text } from '@metamask/snaps-ui';
 export async function requestPassword(
   message = 'Please enter the password to decrypt the import file.'
 ) {
-  return await snap.request({
-    method: 'snap_dialog',
-    params: {
-      type: 'prompt',
-      content: panel([heading('Enter Password'), text(message)]),
-      placeholder: 'Enter password',
-    },
-  });
+  return await metamaskPrompt(
+    panel([heading('Enter Password'), text(message)]),
+    'Enter password'
+  );
 }
 
 /**
@@ -25,18 +98,14 @@ export async function requestPassword(
  * @returns
  */
 export async function importCredentials() {
-  return await snap.request({
-    method: 'snap_dialog',
-    params: {
-      type: 'confirmation',
-      content: panel([
-        heading('Import Credentials'),
-        text(
-          `Approve to merge imported credentials with your existing state. Reject to replace your existing state with the imported data.`
-        ),
-      ]),
-    },
-  });
+  return await metamaskConfirmation(
+    panel([
+      heading('Import Credentials'),
+      text(
+        `Approve to merge imported credentials with your existing state. Reject to replace your existing state with the imported data.`
+      ),
+    ])
+  );
 }
 
 /**
@@ -52,20 +121,16 @@ export async function securityAlert(
   global: boolean,
   elevated: boolean
 ) {
-  return await snap.request({
-    method: 'snap_dialog',
-    params: {
-      type: 'confirmation',
-      content: panel([
-        heading('Security Alert'),
-        text(
-          `"${origin}" is requesting access to your credentials ${
-            global || elevated ? 'for all sites' : 'for the current site'
-          }. Would you like to proceed?`
-        ),
-      ]),
-    },
-  });
+  return await metamaskConfirmation(
+    panel([
+      heading('Security Alert'),
+      text(
+        `"${origin}" is requesting access to your credentials ${
+          global || elevated ? 'for all sites' : 'for the current site'
+        }. Would you like to proceed?`
+      ),
+    ])
+  );
 }
 
 /**
@@ -74,14 +139,10 @@ export async function securityAlert(
  * @returns
  */
 export async function whereToSync() {
-  return await snap.request({
-    method: 'snap_dialog',
-    params: {
-      type: 'confirmation',
-      content: panel([
-        heading('Where should EthSign Keychain sync from?'),
-        text(`Approve to sync to AWS. Reject to sync to Arweave.`),
-      ]),
-    },
-  });
+  return await metamaskConfirmation(
+    panel([
+      heading('Where should EthSign Keychain sync from?'),
+      text(`Approve to sync to AWS. Reject to sync to Arweave.`),
+    ])
+  );
 }
