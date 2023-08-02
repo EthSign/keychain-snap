@@ -276,21 +276,33 @@ async function setSyncTo(
   let res = false;
   switch (data.toLowerCase()) {
     case 'aws':
-      res = !!(await whereToSync('AWS'));
-      if (res) {
-        state.remoteLocation = RemoteLocation.AWS;
+      if (state.remoteLocation !== RemoteLocation.AWS) {
+        if (!state.remoteLocation) {
+          // We default to AWS syncing anyway, so if the local state's remoteLocation value
+          // has never been set, we don't need to ask the user to initialize the value.
+          state.remoteLocation = RemoteLocation.AWS;
+        } else {
+          res = !!(await whereToSync('AWS'));
+          if (res) {
+            state.remoteLocation = RemoteLocation.AWS;
+          }
+        }
       }
       break;
     case 'arweave':
-      res = !!(await whereToSync('Arweave'));
-      if (res) {
-        state.remoteLocation = RemoteLocation.ARWEAVE;
+      if (state.remoteLocation !== RemoteLocation.ARWEAVE) {
+        res = !!(await whereToSync('Arweave'));
+        if (res) {
+          state.remoteLocation = RemoteLocation.ARWEAVE;
+        }
       }
       break;
     case 'none':
-      res = !!(await whereToSync('None'));
-      if (res) {
-        state.remoteLocation = RemoteLocation.NONE;
+      if (state.remoteLocation !== RemoteLocation.NONE) {
+        res = !!(await whereToSync('None'));
+        if (res) {
+          state.remoteLocation = RemoteLocation.NONE;
+        }
       }
       break;
     default:
@@ -1220,10 +1232,14 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
 
     case 'set_sync_to':
       await setSyncTo(state, data);
-      return 'OK';
+      return state.remoteLocation !== null
+        ? RemoteLocation[state.remoteLocation]
+        : null;
 
     case 'get_sync_to':
-      return state.remoteLocation ? RemoteLocation[state.remoteLocation] : null;
+      return state.remoteLocation !== null
+        ? RemoteLocation[state.remoteLocation]
+        : null;
 
     case 'set_neversave':
       await setNeverSave(state, website, neverSave);
