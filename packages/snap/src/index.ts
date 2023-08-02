@@ -260,6 +260,49 @@ async function registry(
 }
 
 /**
+ * Update the remoteLocation variable of a given state object following MetaMask confirmation popup.
+ *
+ * @param state - Existing local EthSignKeychainState object.
+ * @param data - String containing "AWS", "Arweave", or "None".
+ * @returns Object in the format { success: boolean, message?: string }.
+ */
+async function setSyncTo(
+  state: EthSignKeychainState,
+  data: string
+): Promise<{ success: boolean; message?: string }> {
+  if (!data) {
+    return { success: false, message: 'Unknown sync location.' };
+  }
+  let res = false;
+  switch (data.toLowerCase()) {
+    case 'aws':
+      res = !!(await whereToSync('AWS'));
+      if (res) {
+        state.remoteLocation = RemoteLocation.AWS;
+      }
+      break;
+    case 'arweave':
+      res = !!(await whereToSync('Arweave'));
+      if (res) {
+        state.remoteLocation = RemoteLocation.ARWEAVE;
+      }
+      break;
+    case 'none':
+      res = !!(await whereToSync('None'));
+      if (res) {
+        state.remoteLocation = RemoteLocation.NONE;
+      }
+      break;
+    default:
+      return { success: false, message: 'Unknown sync location.' };
+  }
+
+  await savePasswords(state);
+
+  return { success: true };
+}
+
+/**
  * Sync the provided state with the remote state built from document retrieval on Arweave.
  *
  * @param state - Local state we are updating with fetched remote state.
@@ -269,9 +312,9 @@ async function sync(
 ): Promise<EthSignKeychainState> {
   if (state.remoteLocation === null) {
     // Ask user where they want to store their remote passwords.
-    const result = await whereToSync();
-
-    state.remoteLocation = result ? RemoteLocation.AWS : RemoteLocation.ARWEAVE;
+    // TODO: Default to AWS and don't ask where to sync here
+    // const result = await whereToSync();
+    // state.remoteLocation = result ? RemoteLocation.AWS : RemoteLocation.ARWEAVE;
   }
 
   // Get internal MetaMask keys
@@ -476,6 +519,7 @@ async function checkRemoteStatus(
               const amidx = localState.pendingEntries.findIndex(
                 (e) =>
                   e.type === 'pwStateSet' &&
+                  e.payload.url === entry.url &&
                   e.payload.username === entry.username &&
                   e.payload.password === entry.password &&
                   e.payload.timestamp === entry.timestamp
@@ -496,6 +540,7 @@ async function checkRemoteStatus(
             const amidx = localState.pendingEntries.findIndex(
               (e) =>
                 e.type === 'pwStateSet' &&
+                e.payload.url === entry.url &&
                 e.payload.username === entry.username &&
                 e.payload.password === entry.password &&
                 e.payload.timestamp === entry.timestamp
@@ -509,6 +554,33 @@ async function checkRemoteStatus(
           });
         }
       }
+
+      // Now check for remote entries that are not present locally. If found, that means
+      // the local timestamp is larger and it has been removed locally. We will remove
+      // the entry from the remote state.
+      for (const entry of remoteState.pwState[key].logins) {
+        const idx = localState.pwState[key].logins.findIndex(
+          (e) => e.username === entry.username
+        );
+        // The remote entry was not found locally and needs to be removed from the remote state.
+        if (idx < 0) {
+          await arweaveMutex.runExclusive(async () => {
+            const amidx = localState.pendingEntries.findIndex(
+              (e) =>
+                e.type === 'pwStateDel' &&
+                e.payload.url === entry.url &&
+                e.payload.username === entry.username &&
+                e.payload.timestamp === entry.timestamp
+            );
+            if (amidx < 0) {
+              localState.pendingEntries.push({
+                type: 'pwStateDel',
+                payload: entry,
+              });
+            }
+          });
+        }
+      }
     } else {
       // If key does not exist on remote, add each password entry to remote state.
       for (const entry of localState.pwState[key].logins) {
@@ -516,6 +588,7 @@ async function checkRemoteStatus(
           const amidx = localState.pendingEntries.findIndex(
             (e) =>
               e.type === 'pwStateSet' &&
+              e.payload.url === entry.url &&
               e.payload.username === entry.username &&
               e.payload.password === entry.password &&
               e.payload.timestamp === entry.timestamp
@@ -1066,7 +1139,21 @@ const importState = async (
       }
     } else {
       currentState.pwState = decrypted;
+
+      // Since we are replacing our current state, we will need to update timestamps on all entries here.
+      // This will prevent syncing from overwriting this imported state (assuming some entries are older
+      // than what's present in any remote or previous local state).
+      const timestamp = Math.floor(Date.now() / 1000);
+      currentState.timestamp = timestamp;
+      for (const key of Object.keys(currentState.pwState)) {
+        currentState.pwState[key].timestamp = timestamp;
+        for (const login of currentState.pwState[key].logins) {
+          login.timestamp = timestamp;
+        }
+      }
     }
+
+    await sync(currentState);
 
     return {
       success: true,
@@ -1128,8 +1215,15 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
   let ret: any;
   switch (request.method) {
     case 'sync':
-      return await sync(state);
+      await sync(state);
       return 'OK';
+
+    case 'set_sync_to':
+      await setSyncTo(state, data);
+      return 'OK';
+
+    case 'get_sync_to':
+      return state.remoteLocation ? RemoteLocation[state.remoteLocation] : null;
 
     case 'set_neversave':
       await setNeverSave(state, website, neverSave);

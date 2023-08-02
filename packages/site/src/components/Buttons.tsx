@@ -118,6 +118,14 @@ export const SendExportStateButton = (props: ComponentProps<typeof Button>) => {
   return <Button {...props}>Send export</Button>;
 };
 
+export const SendSyncToButton = (props: ComponentProps<typeof Button>) => {
+  return <Button {...props}>Sync To</Button>;
+};
+
+export const SendGetSyncToButton = (props: ComponentProps<typeof Button>) => {
+  return <Button {...props}>Get Sync To</Button>;
+};
+
 export const SendSetNeverSaveButton = (
   props: ComponentProps<typeof Button>
 ) => {

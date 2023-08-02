@@ -9,10 +9,12 @@ import {
   sendEncrypt,
   sendExportState,
   sendGet,
+  sendGetSyncTo,
   sendRegistry,
   sendRemove,
   sendSet,
   sendSetNeverSaveClick,
+  sendSetSyncTo,
   sendSync,
   shouldDisplayReconnectButton,
 } from '../utils';
@@ -30,6 +32,8 @@ import {
   SendEncryptButton,
   SendRegistryButton,
   SendExportStateButton,
+  SendSyncToButton,
+  SendGetSyncToButton,
 } from '../components';
 
 const Container = styled.div`
@@ -229,6 +233,24 @@ const Index = () => {
     }
   };
 
+  const handleSendSyncToClick = async () => {
+    try {
+      console.log(await sendSetSyncTo());
+    } catch (e) {
+      console.error(e);
+      dispatch({ type: MetamaskActions.SetError, payload: e });
+    }
+  };
+
+  const handleSendGetSyncToClick = async () => {
+    try {
+      console.log(await sendGetSyncTo());
+    } catch (e) {
+      console.error(e);
+      dispatch({ type: MetamaskActions.SetError, payload: e });
+    }
+  };
+
   return (
     <Container>
       <Heading>
@@ -327,6 +349,14 @@ const Index = () => {
                 />
                 <SendExportStateButton
                   onClick={handleSendExportStateClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendSyncToButton
+                  onClick={handleSendSyncToClick}
+                  disabled={!state.installedSnap}
+                />
+                <SendGetSyncToButton
+                  onClick={handleSendGetSyncToClick}
                   disabled={!state.installedSnap}
                 />
               </>

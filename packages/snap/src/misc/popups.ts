@@ -134,15 +134,25 @@ export async function securityAlert(
 }
 
 /**
- * Ask user whether to sync to AWS or Arweave.
+ * Prompt user to confirm a sync location update.
  *
+ * @param syncLocation - String containing "AWS", "Arweave", or "None".
  * @returns
  */
-export async function whereToSync() {
+export async function whereToSync(syncLocation: string) {
+  if (syncLocation === 'None') {
+    return await metamaskConfirmation(
+      panel([
+        heading(`Disable Syncing?`),
+        text(`Are you sure you wish to disable syncing?`),
+      ])
+    );
+  }
+
   return await metamaskConfirmation(
     panel([
-      heading('Where should EthSign Keychain sync from?'),
-      text(`Approve to sync to AWS. Reject to sync to Arweave.`),
+      heading(`Sync to ${syncLocation}?`),
+      text(`Are you sure you wish to sync to ${syncLocation}?`),
     ])
   );
 }

@@ -189,4 +189,29 @@ export const sendExportState = async () => {
   });
 };
 
+export const sendSetSyncTo = async () => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'set_sync_to',
+        params: { data: 'AWS' },
+      },
+    },
+  });
+};
+
+export const sendGetSyncTo = async () => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'get_sync_to',
+      },
+    },
+  });
+};
+
 export const isLocalSnap = (snapId: string) => snapId.startsWith('local:');
