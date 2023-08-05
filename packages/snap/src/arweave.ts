@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { extractPublicKey, personalSign } from '@metamask/eth-sig-util';
-import CryptoJS from 'crypto-js';
+import publicKeyToAddress from 'ethereum-public-key-to-address';
+import nacl from 'tweetnacl';
 import {
   batchFetchTxOnArweave,
   fetchCachedTx,
@@ -8,24 +9,40 @@ import {
   postUploadToStorage,
 } from './misc/storage';
 import { ArweavePayload, StoragePayload } from './types';
+import {
+  generateNonce,
+  stringToUint8Array,
+  uint8ArrayToString,
+} from './misc/binary';
 import { EthSignKeychainState, EthSignKeychainEntry } from '.';
 
 /**
- * Encrypt an EthSignKeyChainState object using a provided key.
+ * Encrypt a JSON object using a provided key.
  *
- * @param object - EthSignKeychainState object to encrypt.
+ * @param object - JSON object to encrypt.
+ * @param object.timestamp - Timestamp used for encryption nonce creation. Current timestamp used if object.timestamp is 0.
  * @param key - Key used to encrypt the password.
  * @returns Encrypted UTF-8 string of the object.
  */
 export const getEncryptedStringFromBuffer = (
-  object: EthSignKeychainState,
+  object: { timestamp: number; [key: string]: any },
   key: string,
 ): string => {
-  const encryptedString = CryptoJS.AES.encrypt(
-    JSON.stringify(object),
-    key,
-  ).toString();
-  return encryptedString;
+  if (!object.timestamp && object.timestamp !== 0) {
+    throw new Error('Error encrypting object. Timestamp not available.');
+  }
+  const nonce = generateNonce(
+    object.timestamp === 0 ? Math.floor(Date.now() / 1000) : object.timestamp,
+  );
+  const encryptedString = nacl.secretbox(
+    Buffer.from(JSON.stringify(object)),
+    nonce,
+    Uint8Array.from(Buffer.from(key.substring(2), 'hex')),
+  );
+  return JSON.stringify({
+    nonce: uint8ArrayToString(nonce),
+    data: uint8ArrayToString(encryptedString),
+  });
 };
 
 /**
@@ -35,37 +52,47 @@ export const getEncryptedStringFromBuffer = (
  * @param key - Key used to decrypt the string.
  * @returns JSON object representing the decrypted string.
  */
-export const decryptDataArrayFromStringAES = (
+export const decryptDataArrayFromString = (
   encryptedString: string,
   key = '',
 ): EthSignKeychainState | undefined => {
-  const bytes = CryptoJS.AES.decrypt(encryptedString, key);
-  let decrypted: EthSignKeychainState | undefined;
   try {
-    decrypted = JSON.parse(bytes.toString(CryptoJS.enc.Utf8));
+    const obj = JSON.parse(encryptedString);
+    let decrypted: EthSignKeychainState | null | undefined = null;
+    const buffer = nacl.secretbox.open(
+      stringToUint8Array(obj.data),
+      stringToUint8Array(obj.nonce),
+      Uint8Array.from(Buffer.from(key.substring(2), 'hex')),
+    );
+    decrypted = buffer ? JSON.parse(Buffer.from(buffer).toString()) : undefined;
+    return decrypted ?? undefined;
   } catch (err) {
-    decrypted = undefined;
+    return undefined;
   }
-  return decrypted;
 };
 
 /**
  * Decrypt an encrypted string using the provided key.
  *
  * @param encryptedString - Encrypted string to decrypt.
- * @param key - Key used to decrypt the string.
+ * @param queryAddress - Address that was used to query for a registry entry.
  * @returns JSON object representing the decrypted string.
  */
 export const verifyRegistrySignature = (
   encryptedString: string,
-  key = '',
+  queryAddress = '',
 ): boolean => {
+  const qAddress = queryAddress.toLowerCase();
   const obj = JSON.parse(encryptedString);
   if (obj?.signature) {
-    return (
-      extractPublicKey({ data: obj.message, signature: obj.signature }) ===
-      key.substring(0, 2) + key.substring(4)
-    );
+    const publicKey = extractPublicKey({
+      data: obj.message,
+      signature: obj.signature,
+    });
+    const address = publicKeyToAddress(
+      `${publicKey.substring(0, 2)}04${publicKey.substring(2)}`,
+    ).toLowerCase();
+    return address === qAddress;
   }
 
   return false;
@@ -383,11 +410,28 @@ export const getFilesForUser = async (
 };
 
 /**
+ * Ensures that the signed message's values match the payload's values for a given registry payload.
+ *
+ * @param payload - Registry payload to verify.
+ * @returns True if values match. False otherwise.
+ */
+const isValidMessage = (payload: any) => {
+  const pl = JSON.parse(payload);
+  const msgPayload = JSON.parse(pl.message.slice(119));
+  return (
+    msgPayload.publicKey === pl.publicKey &&
+    msgPayload.publicAddress === pl.publicAddress &&
+    msgPayload.timestamp === pl.timestamp
+  );
+};
+
+/**
  * Get a list of objects corresponding to the current user from Arweave and Redis.
  *
  * @param files - List of files {type: string, payload: Object} we retrieved for the userPublicKey.
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
+ * @param userAddress - Address for validating unencrypted registry entries.
  * @param startingState - The EthSignKeychainState to start building on.
  * @returns List of objects from Arweave and Redis.
  */
@@ -395,6 +439,7 @@ export const getObjectsFromStorage = async (
   files: any[],
   userPublicKey: string,
   userPrivateKey: string,
+  userAddress: string,
   startingState = {
     config: {
       address: userPublicKey,
@@ -431,13 +476,11 @@ export const getObjectsFromStorage = async (
     const payload: any =
       // eslint-disable-next-line no-nested-ternary
       file.type === 'registry'
-        ? verifyRegistrySignature(
-            file.payload,
-            JSON.parse(file.payload)?.publicKey,
-          )
+        ? verifyRegistrySignature(file.payload, userAddress) &&
+          isValidMessage(file.payload)
           ? JSON.parse(file.payload)
           : undefined
-        : decryptDataArrayFromStringAES(file.payload, userPrivateKey);
+        : decryptDataArrayFromString(file.payload, userPrivateKey);
 
     if (!payload) {
       continue;

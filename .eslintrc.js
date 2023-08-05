@@ -30,6 +30,12 @@ module.exports = {
         ],
       },
     },
+    {
+      files: ['**/*.d.ts'],
+      rules: {
+        'import/unambiguous': 'off',
+      },
+    },
   ],
 
   ignorePatterns: [

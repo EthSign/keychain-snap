@@ -8,6 +8,7 @@ import {
   sendDecrypt,
   sendEncrypt,
   sendGet,
+  sendRegistry,
   sendRemove,
   sendSet,
   sendSetNeverSaveClick,
@@ -26,6 +27,7 @@ import {
   SendSetNeverSaveButton,
   SendClearNeverSaveButton,
   SendEncryptButton,
+  SendRegistryButton,
 } from '../components';
 
 const Container = styled.div`
@@ -194,14 +196,25 @@ const Index = () => {
   };
 
   const handleSendEncryptClick = async () => {
-  try {
-      // console.log(await sendEncrypt());
-      console.log(await sendDecrypt((await sendEncrypt()).data));
-  } catch (e) {
-    console.error(e);
-    dispatch({ type: MetamaskActions.SetError, payload: e });
-  }
-};
+    try {
+        // console.log(await sendEncrypt());
+        console.log(await sendDecrypt((await sendEncrypt()).data));
+    } catch (e) {
+      console.error(e);
+      dispatch({ type: MetamaskActions.SetError, payload: e });
+    }
+  };
+
+  const handleSendRegistryClick = async () => {
+    try {
+        // For a failed security check, use 0x985Eb8f653Ab087d4122F0C1dBc7972dF6B1642B
+        // For a successful registry entry, use 0x11ee0cf7235Cb595f68e586E8727287aC2BE540A
+        console.log(await sendRegistry("0x11ee0cf7235Cb595f68e586E8727287aC2BE540A"));
+    } catch (e) {
+      console.error(e);
+      dispatch({ type: MetamaskActions.SetError, payload: e });
+    }
+  };
 
   return (
     <Container>
@@ -262,6 +275,7 @@ const Index = () => {
                 <SendClearNeverSaveButton onClick={handleClearNeverSaveClick} disabled={!state.installedSnap} />
                 <SendSyncButton onClick={handleSendSyncClick} disabled={!state.installedSnap} />
                 <SendEncryptButton onClick={handleSendEncryptClick} disabled={!state.installedSnap} />
+                <SendRegistryButton onClick={handleSendRegistryClick} disabled={!state.installedSnap} />
               </>
             ),
           }}

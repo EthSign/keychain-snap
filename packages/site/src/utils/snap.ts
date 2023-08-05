@@ -143,7 +143,7 @@ export const sendEncrypt = async (): Promise<any> => {
       request: {
         method: 'encrypt',
         params: {
-          address: '0x985Eb8f653Ab087d4122F0C1dBc7972dF6B1642B',
+          address: '0x11ee0cf7235Cb595f68e586E8727287aC2BE540A',
           data: 'this is a test',
         },
       },
@@ -159,6 +159,19 @@ export const sendDecrypt = async (data: string) => {
       request: {
         method: 'decrypt',
         params: { data },
+      },
+    },
+  });
+};
+
+export const sendRegistry = async (address: string) => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'registry',
+        params: { address },
       },
     },
   });
