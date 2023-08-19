@@ -26,13 +26,13 @@ export async function metamaskConfirmation(
     | {
         value: string;
         type: NodeType.Text;
-      }
+      },
 ) {
   return await snap.request({
     method: 'snap_dialog',
     params: {
       type: 'confirmation',
-      content: content,
+      content,
     },
   });
 }
@@ -65,14 +65,14 @@ export async function metamaskPrompt(
         value: string;
         type: NodeType.Text;
       },
-  placeholder: string
+  placeholder: string,
 ) {
   return await snap.request({
     method: 'snap_dialog',
     params: {
       type: 'prompt',
-      content: content,
-      placeholder: placeholder,
+      content,
+      placeholder,
     },
   });
 }
@@ -81,30 +81,30 @@ export async function metamaskPrompt(
  * Request password from the user using a MetaMask popup.
  *
  * @param message - Message for body of the popup request.
- * @returns
+ * @returns MetaMask prompt response.
  */
 export async function requestPassword(
-  message = 'Please enter the password to decrypt the import file.'
+  message = 'Please enter the password to decrypt the import file.',
 ) {
   return await metamaskPrompt(
     panel([heading('Enter Password'), text(message)]),
-    'Enter password'
+    'Enter password',
   );
 }
 
 /**
  * Ask the user whether to merge or replace their current credentials with those that have been imported.
  *
- * @returns
+ * @returns MetaMask prompt response.
  */
 export async function importCredentials() {
   return await metamaskConfirmation(
     panel([
       heading('Import Credentials'),
       text(
-        `Approve to merge imported credentials with your existing state. Reject to replace your existing state with the imported data.`
+        `Approve to merge imported credentials with your existing state. Reject to replace your existing state with the imported data.`,
       ),
-    ])
+    ]),
   );
 }
 
@@ -114,12 +114,12 @@ export async function importCredentials() {
  * @param origin - Origin requesting access to protected resources.
  * @param global - Whether or not the origin is requesting protected resources from another origin.
  * @param elevated - Whether or not the requested resources are of elevated status.
- * @returns
+ * @returns MetaMask prompt response.
  */
 export async function securityAlert(
   origin: string,
   global: boolean,
-  elevated: boolean
+  elevated: boolean,
 ) {
   return await metamaskConfirmation(
     panel([
@@ -127,9 +127,9 @@ export async function securityAlert(
       text(
         `"${origin}" is requesting access to your credentials ${
           global || elevated ? 'for all sites' : 'for the current site'
-        }. Would you like to proceed?`
+        }. Would you like to proceed?`,
       ),
-    ])
+    ]),
   );
 }
 
@@ -137,7 +137,7 @@ export async function securityAlert(
  * Prompt user to confirm a sync location update.
  *
  * @param syncLocation - String containing "AWS", "Arweave", or "None".
- * @returns
+ * @returns MetaMask prompt response.
  */
 export async function whereToSync(syncLocation: string) {
   if (syncLocation === 'None') {
@@ -145,7 +145,7 @@ export async function whereToSync(syncLocation: string) {
       panel([
         heading(`Disable Syncing?`),
         text(`Are you sure you wish to disable syncing?`),
-      ])
+      ]),
     );
   }
 
@@ -153,6 +153,6 @@ export async function whereToSync(syncLocation: string) {
     panel([
       heading(`Sync to ${syncLocation}?`),
       text(`Are you sure you wish to sync to ${syncLocation}?`),
-    ])
+    ]),
   );
 }

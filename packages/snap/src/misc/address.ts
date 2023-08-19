@@ -19,7 +19,7 @@ export async function getKeyDeriver() {
   const ethNode: any = await snap.request({
     method: 'snap_getBip44Entropy',
     params: {
-      coinType: 60,
+      coinType: 0,
     },
   });
 

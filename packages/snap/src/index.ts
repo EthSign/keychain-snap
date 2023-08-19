@@ -1,9 +1,9 @@
 // eslint-disable-next-line
-import * as types from '@metamask/snaps-types';
 import { createHash } from 'crypto';
+import { OnRpcRequestHandler } from '@metamask/snaps-types';
 import { Mutex } from 'async-mutex';
-import { heading, panel, text } from '@metamask/snaps-ui';
 import { encrypt, decrypt } from 'eciesjs';
+import nacl from 'tweetnacl';
 import {
   decryptDataArrayFromString,
   getEncryptedStringFromBuffer,
@@ -17,19 +17,14 @@ import {
   stringToUint8Array,
   uint8ArrayToString,
 } from './misc/binary';
-import nacl from 'tweetnacl';
 import {
   importCredentials,
   requestPassword,
   securityAlert,
   whereToSync,
 } from './misc/popups';
-
-enum RemoteLocation {
-  ARWEAVE,
-  AWS,
-  NONE,
-}
+import { AWS_API_ENDPOINT } from './constants';
+import { RemoteLocation } from './types';
 
 type EthSignKeychainBase = {
   address?: string;
@@ -69,6 +64,7 @@ export type EthSignKeychainState = {
   credentialAccess: { [origin: string]: boolean };
   password: string | null;
   remoteLocation: RemoteLocation | null;
+  awsInitFailure: boolean | null;
 } & EthSignKeychainBase;
 
 // Create mutexes for changing our local state object (no dirty writes)
@@ -121,6 +117,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       credentialAccess: {},
       password: null,
       remoteLocation: null,
+      awsInitFailure: null,
     } as EthSignKeychainState;
   }
 
@@ -152,6 +149,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       credentialAccess: {},
       password: null,
       remoteLocation: null,
+      awsInitFailure: null,
     } as EthSignKeychainState;
   }
 
@@ -165,7 +163,7 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
         | undefined
         | null) ?? '',
       keys.privateKey,
-      state.password
+      state.password,
     ) ??
     ({
       address: '',
@@ -185,8 +183,22 @@ async function getEthSignKeychainState(): Promise<EthSignKeychainState> {
       credentialAccess: {},
       password: null,
       remoteLocation: null,
+      awsInitFailure: null,
     } as EthSignKeychainState)
   );
+}
+
+/**
+ * Return a response object for limited functionality preventing this from running properly.
+ *
+ * @returns Response object with restricted functionality message.
+ */
+function functionalityLimited() {
+  return {
+    success: false,
+    message:
+      "This functionality has been restricted due to MetaMask's last-minute API change on snaps. Please see https://github.com/MetaMask/snaps/issues/1665 for updates.",
+  };
 }
 
 /**
@@ -211,7 +223,7 @@ async function savePasswords(newState: EthSignKeychainState) {
   state.ethsignKeychainState[keys.publicKey] = getEncryptedStringFromBuffer(
     newState,
     keys.privateKey,
-    state.password
+    state.password,
   );
 
   // The state is automatically encrypted behind the scenes by MetaMask using snap-specific keys
@@ -231,8 +243,11 @@ async function savePasswords(newState: EthSignKeychainState) {
  * @returns User registry object or undefined.
  */
 async function registry(
-  address: string
+  address: string,
 ): Promise<{ publicAddress: string; publicKey: string }> {
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
+  return functionalityLimited();
   if (!address) {
     return {
       publicAddress: '',
@@ -240,19 +255,40 @@ async function registry(
     };
   }
 
-  let files: any = await getFilesForUser(address.toLowerCase());
+  let files: any = await getFilesForUser(
+    address.toLowerCase(),
+    RemoteLocation.AWS,
+  );
   files = files.filter((file: any) => file.type === 'registry');
 
   // Registry entries are always unencrypted, so no keys or passwords are required.
-  const state: EthSignKeychainState = await getObjectsFromStorage(
+  let state: EthSignKeychainState = await getObjectsFromStorage(
     files,
     '',
     '',
     address,
     null,
-    undefined
+    undefined,
   );
 
+  // We did not find any registry information on AWS. Try Arweave.
+  if (state.registry.timestamp === 0) {
+    files = await getFilesForUser(
+      address.toLowerCase(),
+      RemoteLocation.ARWEAVE,
+    );
+    files = files.filter((file: any) => file.type === 'registry');
+    state = await getObjectsFromStorage(
+      files,
+      '',
+      '',
+      address,
+      null,
+      undefined,
+    );
+  }
+
+  // By this point, we found the registry or will be returning empty values.
   return {
     publicAddress: state.registry.publicAddress,
     publicKey: state.registry.publicKey,
@@ -268,7 +304,7 @@ async function registry(
  */
 async function setSyncTo(
   state: EthSignKeychainState,
-  data: string
+  data: string,
 ): Promise<{ success: boolean; message?: string }> {
   if (!data) {
     return { success: false, message: 'Unknown sync location.' };
@@ -277,30 +313,33 @@ async function setSyncTo(
   switch (data.toLowerCase()) {
     case 'aws':
       if (state.remoteLocation !== RemoteLocation.AWS) {
-        if (!state.remoteLocation) {
+        if (state.remoteLocation) {
+          res = Boolean(await whereToSync('AWS'));
+          if (res) {
+            // eslint-disable-next-line require-atomic-updates
+            state.remoteLocation = RemoteLocation.AWS;
+          }
+        } else {
           // We default to AWS syncing anyway, so if the local state's remoteLocation value
           // has never been set, we don't need to ask the user to initialize the value.
           state.remoteLocation = RemoteLocation.AWS;
-        } else {
-          res = !!(await whereToSync('AWS'));
-          if (res) {
-            state.remoteLocation = RemoteLocation.AWS;
-          }
         }
       }
       break;
     case 'arweave':
       if (state.remoteLocation !== RemoteLocation.ARWEAVE) {
-        res = !!(await whereToSync('Arweave'));
+        res = Boolean(await whereToSync('Arweave'));
         if (res) {
+          // eslint-disable-next-line require-atomic-updates
           state.remoteLocation = RemoteLocation.ARWEAVE;
         }
       }
       break;
     case 'none':
       if (state.remoteLocation !== RemoteLocation.NONE) {
-        res = !!(await whereToSync('None'));
+        res = Boolean(await whereToSync('None'));
         if (res) {
+          // eslint-disable-next-line require-atomic-updates
           state.remoteLocation = RemoteLocation.NONE;
         }
       }
@@ -315,18 +354,59 @@ async function setSyncTo(
 }
 
 /**
+ * Initialize AWS server so that the current user is created in the system for storing future credential entries.
+ *
+ * @param state - Current EthSignKeychainState.
+ * @param userPublicKey - Current user's public key.
+ */
+async function initAws(
+  state: EthSignKeychainState,
+  userPublicKey: string,
+): Promise<boolean> {
+  try {
+    return await fetch(`${AWS_API_ENDPOINT}/users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        publicKey: userPublicKey,
+      }),
+    })
+      .then((res) => res.json())
+      .then((response) => {
+        if (!response.data) {
+          state.awsInitFailure = true;
+          return false;
+        }
+        return true;
+      });
+  } catch (err) {
+    state.awsInitFailure = true;
+    return false;
+  }
+}
+
+/**
  * Sync the provided state with the remote state built from document retrieval on Arweave.
  *
  * @param state - Local state we are updating with fetched remote state.
  */
 async function sync(
-  state: EthSignKeychainState
+  state: EthSignKeychainState,
 ): Promise<EthSignKeychainState> {
-  if (state.remoteLocation === null) {
-    // Ask user where they want to store their remote passwords.
-    // TODO: Default to AWS and don't ask where to sync here
-    // const result = await whereToSync();
-    // state.remoteLocation = result ? RemoteLocation.AWS : RemoteLocation.ARWEAVE;
+  if (state.remoteLocation === RemoteLocation.NONE) {
+    // No location to sync with. We can safely return.
+    return new Promise((resolve) => resolve(state));
+  }
+
+  if (state.password === null || state.password === undefined) {
+    // Request password from the user.
+    const pass = await requestPassword(
+      'Please create or enter the password associated with EthSign Keychain. Leave the form blank to opt out of a second layer of password encryption.',
+    );
+    state.password =
+      pass !== null && pass !== undefined ? pass.toString() : null;
   }
 
   // Get internal MetaMask keys
@@ -334,10 +414,10 @@ async function sync(
 
   // Failed to get internal keys, so return
   if (!keys?.privateKey) {
-    return state;
+    return new Promise((resolve) => resolve(state));
   }
 
-  const files = await getFilesForUser(keys.publicKey);
+  const files = await getFilesForUser(keys.publicKey, state.remoteLocation);
 
   // Get the remote state built on all remote objects
   const localState = await getObjectsFromStorage(
@@ -346,7 +426,7 @@ async function sync(
     keys.privateKey,
     keys.address,
     state.password,
-    state
+    state,
   );
 
   const remoteState = await getObjectsFromStorage(
@@ -354,17 +434,18 @@ async function sync(
     keys.publicKey,
     keys.privateKey,
     keys.address,
-    state.password
+    state.password,
   );
 
   const remoteStateEmpty = remoteState.timestamp === 0;
 
   // Merge local state with remote state and get a list of changes that we need to upload remotely
-  // const tmpState = await mergeStates(doc, state);
   const tmpState = await checkRemoteStatus(localState, remoteState);
   const addr = await getAddress();
 
-  // If registry has never been initialized, initialize it
+  // If registry has never been initialized, initialize it.
+  // We will also use this time to create a new user on our AWS backend, if remote location is AWS.
+  // Eventually, we will just create a new registry entry on AWS instead of a new user.
   if (
     !tmpState.registry.publicAddress ||
     tmpState.registry.publicAddress === ''
@@ -376,6 +457,8 @@ async function sync(
       timestamp,
     };
 
+    await initAws(tmpState, keys.userPublicKey);
+
     // Add config set pending entry (for remote Arweave update)
     await arweaveMutex.runExclusive(async () => {
       const amidx = localState.pendingEntries.findIndex(
@@ -383,7 +466,7 @@ async function sync(
           e.type === 'registry' &&
           e.payload.timestamp === tmpState.registry.timestamp &&
           e.payload.publicAddress === tmpState.registry.publicAddress &&
-          e.payload.publicKey === tmpState.registry.publicKey
+          e.payload.publicKey === tmpState.registry.publicKey,
       );
       if (amidx < 0) {
         tmpState.pendingEntries.push({
@@ -414,7 +497,7 @@ async function sync(
           e.type === 'config' &&
           e.payload.timestamp === tmpState.config.timestamp &&
           e.payload.address === tmpState.config.address &&
-          e.payload.encryptionMethod === tmpState.config.encryptionMethod
+          e.payload.encryptionMethod === tmpState.config.encryptionMethod,
       );
       if (amidx < 0) {
         tmpState.pendingEntries.push({
@@ -445,7 +528,7 @@ async function sync(
  */
 async function checkRemoteStatus(
   localState: EthSignKeychainState,
-  remoteState: EthSignKeychainState
+  remoteState: EthSignKeychainState,
 ) {
   // Check registries
   if (
@@ -457,7 +540,7 @@ async function checkRemoteStatus(
         e.type === 'registry' &&
         e.payload.timestamp === localState.registry.timestamp &&
         e.payload.publicAddress === localState.registry.publicAddress &&
-        e.payload.publicKey === localState.registry.publicKey
+        e.payload.publicKey === localState.registry.publicKey,
     );
     if (amidx < 0) {
       localState.pendingEntries.push({
@@ -481,7 +564,7 @@ async function checkRemoteStatus(
         e.type === 'config' &&
         e.payload.timestamp === localState.config.timestamp &&
         e.payload.address === localState.config.address &&
-        e.payload.encryptionMethod === localState.config.encryptionMethod
+        e.payload.encryptionMethod === localState.config.encryptionMethod,
     );
     if (amidx < 0) {
       localState.pendingEntries.push({
@@ -519,7 +602,7 @@ async function checkRemoteStatus(
       // If local key exists on remote, check each login entry for existence remotely.
       for (const entry of localState.pwState[key].logins) {
         const idx = remoteState.pwState[key].logins.findIndex(
-          (e) => e.username === entry.username
+          (e) => e.username === entry.username,
         );
         if (idx >= 0) {
           // Found. Check timestamps to see if local is newer than remote.
@@ -534,7 +617,7 @@ async function checkRemoteStatus(
                   e.payload.url === entry.url &&
                   e.payload.username === entry.username &&
                   e.payload.password === entry.password &&
-                  e.payload.timestamp === entry.timestamp
+                  e.payload.timestamp === entry.timestamp,
               );
               if (amidx < 0) {
                 localState.pendingEntries.push({
@@ -555,7 +638,7 @@ async function checkRemoteStatus(
                 e.payload.url === entry.url &&
                 e.payload.username === entry.username &&
                 e.payload.password === entry.password &&
-                e.payload.timestamp === entry.timestamp
+                e.payload.timestamp === entry.timestamp,
             );
             if (amidx < 0) {
               localState.pendingEntries.push({
@@ -572,7 +655,7 @@ async function checkRemoteStatus(
       // the entry from the remote state.
       for (const entry of remoteState.pwState[key].logins) {
         const idx = localState.pwState[key].logins.findIndex(
-          (e) => e.username === entry.username
+          (e) => e.username === entry.username,
         );
         // The remote entry was not found locally and needs to be removed from the remote state.
         if (idx < 0) {
@@ -582,7 +665,7 @@ async function checkRemoteStatus(
                 e.type === 'pwStateDel' &&
                 e.payload.url === entry.url &&
                 e.payload.username === entry.username &&
-                e.payload.timestamp === entry.timestamp
+                e.payload.timestamp === entry.timestamp,
             );
             if (amidx < 0) {
               localState.pendingEntries.push({
@@ -603,7 +686,7 @@ async function checkRemoteStatus(
               e.payload.url === entry.url &&
               e.payload.username === entry.username &&
               e.payload.password === entry.password &&
-              e.payload.timestamp === entry.timestamp
+              e.payload.timestamp === entry.timestamp,
           );
           if (amidx < 0) {
             localState.pendingEntries.push({
@@ -625,19 +708,21 @@ async function checkRemoteStatus(
  * @param remoteEmpty - True if the remote state is found to be empty.
  * @returns Promise of void.
  */
-async function processPending(remoteEmpty: boolean = false) {
+async function processPending(remoteEmpty = false) {
   return await arweaveMutex.runExclusive(
     async (): Promise<EthSignKeychainState> => {
       const state = await getEthSignKeychainState();
+      let shouldUpdate = false;
 
       if (remoteEmpty) {
-        if (!state.password) {
+        if (state.password === null || state.password === undefined) {
           // Request password from the user.
           const pass = await requestPassword(
-            'Please create or enter the password associated with EthSign Keychain. Leave the form blank to opt out of a second layer of password encryption.'
+            'Please create or enter the password associated with EthSign Keychain. Leave the form blank to opt out of a second layer of password encryption.',
           );
           state.password =
-            pass && pass.toString().length > 0 ? pass.toString() : null;
+            pass !== null && pass !== undefined ? pass.toString() : null;
+          shouldUpdate = true;
         }
       }
 
@@ -647,26 +732,43 @@ async function processPending(remoteEmpty: boolean = false) {
         return state;
       }
 
-      if (!state?.pendingEntries || state.pendingEntries.length === 0) {
+      const res = await initAws(state, keys.publicKey);
+      if (!res) {
+        if (shouldUpdate) {
+          await savePasswords(state);
+        }
+        return state;
+      }
+      state.awsInitFailure = false;
+      shouldUpdate = true;
+
+      if (
+        !state?.pendingEntries ||
+        state.pendingEntries.length === 0 ||
+        state.remoteLocation === RemoteLocation.NONE
+      ) {
         return state;
       }
 
       const ret: any = JSON.parse(
         (await getTransactionIdFromStorageUploadBatch(
+          state.remoteLocation ?? RemoteLocation.AWS,
           keys.publicKey,
           keys.privateKey,
           state.password,
-          state.pendingEntries as any
-        )) ?? '{}'
+          state.pendingEntries as any,
+        )) ?? '{}',
       );
 
-      if (ret?.transaction?.message === 'success') {
-        state.pendingEntries = [];
+      if (shouldUpdate || ret?.transaction?.message === 'success') {
+        if (ret?.transaction?.message === 'success') {
+          state.pendingEntries = [];
+        }
         await savePasswords(state);
       }
 
       return state;
-    }
+    },
   );
 }
 
@@ -684,7 +786,7 @@ async function originHasAccess(
   origin: string,
   state: EthSignKeychainState,
   elevated: boolean,
-  global: boolean
+  global: boolean,
 ) {
   const access = state?.credentialAccess
     ? state.credentialAccess[origin]
@@ -717,7 +819,7 @@ async function originHasAccess(
 async function setNeverSave(
   state: EthSignKeychainState,
   website: string,
-  neverSave: boolean
+  neverSave: boolean,
 ) {
   let timestamp: number;
   await saveMutex.runExclusive(async () => {
@@ -767,7 +869,7 @@ async function setPassword(
   website: string,
   username: string,
   password: string,
-  controlled: string | null
+  controlled: string | null,
 ) {
   let timestamp: number;
   await saveMutex.runExclusive(async () => {
@@ -776,7 +878,7 @@ async function setPassword(
     let idx = -2;
     if (newPwState[website]) {
       idx = newPwState[website].logins.findIndex(
-        (e) => e.username === username
+        (e) => e.username === username,
       );
     }
 
@@ -848,7 +950,7 @@ async function setPassword(
 async function removePassword(
   state: EthSignKeychainState,
   website: string,
-  username: string
+  username: string,
 ) {
   let timestamp: number;
   await saveMutex.runExclusive(async () => {
@@ -857,7 +959,7 @@ async function removePassword(
     let idx = -2;
     if (newPwState[website]) {
       idx = newPwState[website].logins.findIndex(
-        (e) => e.username === username
+        (e) => e.username === username,
       );
     }
 
@@ -900,14 +1002,14 @@ const checkAccess = async (
   origin: string,
   state: EthSignKeychainState,
   elevated: boolean,
-  request: any
+  request: any,
 ) => {
   // Make sure the current origin has explicit access to use this snap
   const oha = await originHasAccess(
     origin,
     state,
     elevated,
-    request?.params?.global ?? false
+    request?.params?.global ?? false,
   );
   if (!oha) {
     throw new Error('Access denied.');
@@ -924,6 +1026,7 @@ const checkAccess = async (
  * @returns Object in format { success, data?, message? }.
  */
 const eceisEncrypt = async (receiverAddress: string, data: string) => {
+  return functionalityLimited();
   const receiverRegistry = await registry(receiverAddress);
 
   if (!receiverRegistry || receiverRegistry.publicKey === '') {
@@ -948,6 +1051,7 @@ const eceisEncrypt = async (receiverAddress: string, data: string) => {
  * @returns Object in the format { success, data?, message? }.
  */
 const eceisDecrypt = async (data: string) => {
+  return functionalityLimited();
   // Get internal MetaMask keys
   const keys = await getKeys();
 
@@ -969,10 +1073,10 @@ const eceisDecrypt = async (data: string) => {
  * Export the pwState from the current EthSignKeychainState stored locally. Requires user to enter a password for encryption.
  *
  * @param state - EthSignKeychainState containing password state we will be exporting.
- * @returns Object in the format { success: boolean, message?: string, data?: string }
+ * @returns Object in the format { success: boolean, message?: string, data?: string }.
  */
 const exportState = async (
-  state: EthSignKeychainState
+  state: EthSignKeychainState,
 ): Promise<{ success: boolean; message?: string; data?: string }> => {
   if (!state?.pwState || Object.keys(state.pwState).length === 0) {
     return {
@@ -997,13 +1101,13 @@ const exportState = async (
       JSON.stringify({
         pass,
         nonce: uint8ArrayToString(nonce),
-      })
+      }),
     )
     .digest('hex');
   const encryptedString = nacl.secretbox(
     Buffer.from(JSON.stringify(pwState)),
     nonce,
-    Uint8Array.from(Buffer.from(key, 'hex'))
+    Uint8Array.from(Buffer.from(key, 'hex')),
   );
 
   return {
@@ -1020,11 +1124,11 @@ const exportState = async (
  *
  * @param currentState - The current EthSignKeychainState that we will be merging with or replacing.
  * @param importedData - The imported and stringified JSON object containing nonce and data strings.
- * @returns Object in the format { success: boolean, message?: string, data?: EthSignKeychainState }
+ * @returns Object in the format { success: boolean, message?: string, data?: EthSignKeychainState }.
  */
 const importState = async (
   currentState: EthSignKeychainState,
-  importedData: string
+  importedData: string,
 ): Promise<{
   success: boolean;
   message?: string;
@@ -1034,7 +1138,7 @@ const importState = async (
   if (currentState.timestamp > 0) {
     // Ask user if they want to merge or replace their existing password state.
     const result = await importCredentials();
-    merge = !!result;
+    merge = Boolean(result);
   }
 
   try {
@@ -1054,13 +1158,13 @@ const importState = async (
         message: 'User rejected request.',
       };
     }
-    const key = createHash('sha256')
+    const hashKey = createHash('sha256')
       .update(JSON.stringify({ password: pass, nonce: imported.nonce }))
       .digest('hex');
     buffer = nacl.secretbox.open(
       buffer,
       stringToUint8Array(imported.nonce),
-      Uint8Array.from(Buffer.from(key, 'hex'))
+      Uint8Array.from(Buffer.from(hashKey, 'hex')),
     );
     let decrypted: {
       [x: string]: EthSignKeychainPasswordState;
@@ -1079,15 +1183,7 @@ const importState = async (
       // Perform merge
       for (const key of Object.keys(decrypted)) {
         const importedCredential = decrypted[key];
-        if (!currentState.pwState[key]) {
-          // Current state does not contain any credentials for the imported origin
-          currentState.pwState[key] = importedCredential;
-
-          // Check global state timestamp
-          if (currentState.timestamp < importedCredential.timestamp) {
-            currentState.timestamp = importedCredential.timestamp;
-          }
-        } else {
+        if (currentState.pwState[key]) {
           // Update data locally depending on the values of neverSave
           if (
             importedCredential.neverSave &&
@@ -1111,7 +1207,7 @@ const importState = async (
             // so we will import ONLY the credentials set after the neverSave value was set locally.
             currentState.pwState[key].neverSave = false;
             currentState.pwState[key].logins = importedCredential.logins.filter(
-              (item) => item.timestamp > currentState.pwState[key].timestamp
+              (item) => item.timestamp > currentState.pwState[key].timestamp,
             );
             currentState.pwState[key].timestamp = importedCredential.timestamp;
 
@@ -1125,7 +1221,7 @@ const importState = async (
             for (const cred of importedCredential.logins) {
               const idx = currentState.pwState[key].logins.findIndex(
                 (item) =>
-                  item.url === cred.url && item.username === cred.username
+                  item.url === cred.url && item.username === cred.username,
               );
               if (idx < 0) {
                 // Not found in current state
@@ -1141,11 +1237,20 @@ const importState = async (
               if (cred.timestamp > currentState.pwState[key].timestamp) {
                 currentState.pwState[key].timestamp = cred.timestamp;
               }
+
               // Check current state's global timestamp
               if (currentState.timestamp < cred.timestamp) {
                 currentState.timestamp = cred.timestamp;
               }
             }
+          }
+        } else {
+          // Current state does not contain any credentials for the imported origin
+          currentState.pwState[key] = importedCredential;
+
+          // Check global state timestamp
+          if (currentState.timestamp < importedCredential.timestamp) {
+            currentState.timestamp = importedCredential.timestamp;
           }
         }
       }
@@ -1186,7 +1291,10 @@ const importState = async (
  * @param options0.origin - String representing the origin of the request.
  * @param options0.request - Object containing request data. Pass in `global: true` to params to force an elevated permission request (if elevated permissions are not already granted).
  */
-module.exports.onRpcRequest = async ({ origin, request }: any) => {
+export const onRpcRequest: OnRpcRequestHandler = async ({
+  origin,
+  request,
+}: any) => {
   // Get the local state for this snap
   const state = await getEthSignKeychainState();
 
@@ -1210,7 +1318,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
       : request.method === 'export'
       ? true
       : website !== origin,
-    request
+    request,
   );
   if (!oha) {
     throw new Error('Access denied.');
@@ -1232,14 +1340,14 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
 
     case 'set_sync_to':
       await setSyncTo(state, data);
-      return state.remoteLocation !== null
-        ? RemoteLocation[state.remoteLocation]
-        : null;
+      return state.remoteLocation === null
+        ? null
+        : RemoteLocation[state.remoteLocation];
 
     case 'get_sync_to':
-      return state.remoteLocation !== null
-        ? RemoteLocation[state.remoteLocation]
-        : null;
+      return state.remoteLocation === null
+        ? null
+        : RemoteLocation[state.remoteLocation];
 
     case 'set_neversave':
       await setNeverSave(state, website, neverSave);
@@ -1251,7 +1359,7 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
         website,
         username,
         password,
-        controlled ? origin : null
+        controlled ? origin : null,
       );
       return 'OK';
 
@@ -1279,9 +1387,8 @@ module.exports.onRpcRequest = async ({ origin, request }: any) => {
       if (ret.success && ret.data) {
         await savePasswords(ret.data);
         return { success: true, message: 'OK' };
-      } else {
-        return ret;
       }
+      return ret;
 
     default:
       throw new Error('Method not found.');

@@ -20,7 +20,7 @@ export const getSnaps = async (): Promise<GetSnapsResponse> => {
  */
 export const connectSnap = async (
   snapId: string = defaultSnapOrigin,
-  params: Record<'version' | string, unknown> = {}
+  params: Record<'version' | string, unknown> = {},
 ) => {
   await window.ethereum.request({
     method: 'wallet_requestSnaps',
@@ -42,7 +42,7 @@ export const getSnap = async (version?: string): Promise<Snap | undefined> => {
 
     return Object.values(snaps).find(
       (snap) =>
-        snap.id === defaultSnapOrigin && (!version || snap.version === version)
+        snap.id === defaultSnapOrigin && (!version || snap.version === version),
     );
   } catch (e) {
     console.log('Failed to obtain installed snap', e);
@@ -62,7 +62,7 @@ export const sendSet = async () => {
       request: {
         method: 'set_password',
         params: {
-          website: 'localhost:8000',
+          website: 'http://localhost:8000',
           username: 'username',
           password: 'password',
         },
@@ -78,7 +78,7 @@ export const sendGet = async () => {
       snapId: defaultSnapOrigin,
       request: {
         method: 'get_password',
-        params: { website: 'localhost:8000' },
+        params: { website: 'http://localhost:8000' },
       },
     },
   });

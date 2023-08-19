@@ -58,6 +58,6 @@ export function stringToUint8Array(str: string) {
   return new Uint8Array(
     atob(str)
       .split('')
-      .map((char) => char.charCodeAt(0))
+      .map((char) => char.charCodeAt(0)),
   );
 }

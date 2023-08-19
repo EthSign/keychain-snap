@@ -1,10 +1,35 @@
-import { ArweavePayload, StoragePayload, StorageResponse } from '../types';
-
-const ETHSIGN_API_URL = 'https://arweave-staging.ethsign.xyz';
+import { AWS_API_ENDPOINT, ETHSIGN_API_URL } from '../constants';
+import {
+  ArweavePayload,
+  RemoteLocation,
+  StoragePayload,
+  StorageResponse,
+} from '../types';
 
 export const postUploadToStorage = async (
-  data: StoragePayload
+  remoteLocation: RemoteLocation,
+  data: StoragePayload,
+  userPublicKey?: string,
 ): Promise<StorageResponse | undefined> => {
+  if (remoteLocation === RemoteLocation.AWS) {
+    if (!userPublicKey) {
+      return undefined;
+    }
+    const response = await fetch(
+      `${AWS_API_ENDPOINT}/users/pk_${userPublicKey}/passwords`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ upload: data }),
+      },
+    ).then((res) => res.json());
+    if (response?.error) {
+      return { message: 'failed', transaction: { message: 'failure' } };
+    }
+    return { message: 'success', transaction: { message: 'success' } };
+  }
   let tx: any;
   try {
     await fetch(`${ETHSIGN_API_URL}/upload`, {
@@ -35,8 +60,33 @@ export const postUploadToStorage = async (
 };
 
 export const postUploadBatchToStorage = async (
-  data: StoragePayload[]
+  remoteLocation: RemoteLocation,
+  data: StoragePayload[],
+  userPublicKey?: string,
 ): Promise<StorageResponse | undefined> => {
+  if (remoteLocation === RemoteLocation.AWS) {
+    if (!userPublicKey) {
+      return undefined;
+    }
+    const response = await fetch(
+      `${AWS_API_ENDPOINT}/users/pk_${userPublicKey}/passwords/batch`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ batchedUploads: data }),
+      },
+    ).then((res) => res.json());
+    if (response?.error?.failures?.length === 0) {
+      // At least one failed.
+      return { message: 'success', transaction: { message: 'success' } };
+    }
+    return {
+      message: 'failed',
+      transaction: { message: 'At least one upload failed' },
+    };
+  }
   let tx: any;
   try {
     await fetch(`${ETHSIGN_API_URL}/uploadBatch`, {
@@ -67,7 +117,7 @@ export const postUploadBatchToStorage = async (
 };
 
 export const fetchTxOnArweave = async (
-  txId: string
+  txId: string,
 ): Promise<ArweavePayload> => {
   let ret: any;
   try {
@@ -85,7 +135,7 @@ export const fetchTxOnArweave = async (
 };
 
 export const batchFetchTxOnArweave = async (
-  txIds: string[]
+  txIds: string[],
 ): Promise<ArweavePayload[]> => {
   let ret: any = [];
   try {
@@ -106,7 +156,7 @@ export const batchFetchTxOnArweave = async (
 };
 
 export const fetchCachedTx = async (
-  userPublicKey: string
+  userPublicKey: string,
 ): Promise<ArweavePayload[]> => {
   let ret: any[] = [];
   try {
