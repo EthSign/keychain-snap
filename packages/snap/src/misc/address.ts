@@ -1,37 +1,40 @@
-import { getBIP44AddressKeyDeriver } from '@metamask/key-tree';
-import { JsonBip44Node } from '../types';
+// import { getBIP44AddressKeyDeriver } from '@metamask/key-tree';
+import { PrivateKey } from 'eciesjs';
+// import { JsonBip44Node } from '../types';
+import publicKeyToAddress from 'ethereum-public-key-to-address';
 
 /**
- * Gets the address of the current user.
+ * Gets the entropy-generated address of the current user.
  *
  * @returns The address of the current user.
  */
-export async function getAddress() {
+export async function getEntropyAddress() {
   return (await getKeys()).address;
 }
 
 /**
- * Get BIP-44 address key deriver for the current user.
+ * Get the generated keys of the current user using their account's entropy value.
  *
- * @returns BIP44AddressKeyDeriver for the current user.
+ * @returns Key information (private, public) as a BIP-44 node.
  */
-export async function getKeyDeriver() {
-  const ethNode: any = await snap.request({
-    method: 'snap_getBip44Entropy',
+export async function getKeys(): Promise<{
+  publicKey: string;
+  privateKey: string;
+  address: string;
+}> {
+  const input = await snap.request({
+    method: 'snap_getEntropy',
     params: {
-      coinType: 0,
+      version: 1,
+      salt: 'xyz.ethsign.keychain',
     },
   });
 
-  return await getBIP44AddressKeyDeriver(ethNode);
-}
+  const privateKey = PrivateKey.fromHex(input);
 
-/**
- * Get the keys of the current user at a given index.
- *
- * @param index - Number from 0 to 5.
- * @returns Key information (private, public) as a BIP-44 node.
- */
-export async function getKeys(index = 0): Promise<JsonBip44Node | any> {
-  return (await getKeyDeriver())(index);
+  return {
+    publicKey: `0x${privateKey.publicKey.toHex(false)}`,
+    privateKey: privateKey.toHex(),
+    address: publicKeyToAddress(privateKey.publicKey.toHex()),
+  };
 }

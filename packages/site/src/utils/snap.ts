@@ -143,7 +143,7 @@ export const sendEncrypt = async (): Promise<any> => {
       request: {
         method: 'encrypt',
         params: {
-          address: '0x11ee0cf7235Cb595f68e586E8727287aC2BE540A',
+          address: '0x4eA8F16caf796Ca7F7D1BfC95B9C39648e19DFD7',
           data: 'this is a test',
         },
       },

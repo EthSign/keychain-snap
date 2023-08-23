@@ -216,7 +216,7 @@ const Index = () => {
       // For a failed security check, use 0x985Eb8f653Ab087d4122F0C1dBc7972dF6B1642B
       // For a successful registry entry, use 0x11ee0cf7235Cb595f68e586E8727287aC2BE540A
       console.log(
-        await sendRegistry('0x11ee0cf7235Cb595f68e586E8727287aC2BE540A')
+        await sendRegistry('0x11ee0cf7235Cb595f68e586E8727287aC2BE540A'),
       );
     } catch (e) {
       console.error(e);

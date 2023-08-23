@@ -9,9 +9,10 @@ import {
   getEncryptedStringFromBuffer,
   getFilesForUser,
   getObjectsFromStorage,
+  getRegistryFromAWS,
   getTransactionIdFromStorageUploadBatch,
 } from './arweave';
-import { getAddress, getKeys } from './misc/address';
+import { getEntropyAddress, getKeys } from './misc/address';
 import {
   generateNonce,
   stringToUint8Array,
@@ -255,10 +256,7 @@ async function registry(
     };
   }
 
-  let files: any = await getFilesForUser(
-    address.toLowerCase(),
-    RemoteLocation.AWS,
-  );
+  let files: any = await getRegistryFromAWS(address.toLowerCase());
   files = files.filter((file: any) => file.type === 'registry');
 
   // Registry entries are always unencrypted, so no keys or passwords are required.
@@ -441,7 +439,7 @@ async function sync(
 
   // Merge local state with remote state and get a list of changes that we need to upload remotely
   const tmpState = await checkRemoteStatus(localState, remoteState);
-  const addr = await getAddress();
+  const addr = await getEntropyAddress();
 
   // If registry has never been initialized, initialize it.
   // We will also use this time to create a new user on our AWS backend, if remote location is AWS.
@@ -457,9 +455,9 @@ async function sync(
       timestamp,
     };
 
-    await initAws(tmpState, keys.userPublicKey);
+    await initAws(tmpState, keys.publicKey);
 
-    // Add config set pending entry (for remote Arweave update)
+    // Add registry set pending entry (for remote Arweave update)
     await arweaveMutex.runExclusive(async () => {
       const amidx = localState.pendingEntries.findIndex(
         (e: any) =>

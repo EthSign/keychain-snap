@@ -7,7 +7,7 @@
     "url": "https://github.com/EthSign/keychain-snap"
   },
   "source": {
-    "shasum": "RRSjBDJvtnHfWnT/aKUgHiy0y1SssQHSMaFIIPBcOkQ=",
+    "shasum": "pJ+8LUXvoXjMAwR9Ykjz6ps7xxHE3X+fmTR8yqFNBGk=",
     "location": {
       "npm": {
         "filePath": "dist/bundle.js",
@@ -24,11 +24,7 @@
       "snaps": false
     },
     "snap_manageState": {},
-    "snap_getBip44Entropy": [
-      {
-        "coinType": 0
-      }
-    ],
+    "snap_getEntropy": {},
     "endowment:network-access": {}
   },
   "manifestVersion": "0.1"

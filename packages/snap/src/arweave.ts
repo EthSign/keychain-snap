@@ -379,6 +379,25 @@ const getFilesFromAWS = async (
 };
 
 /**
+ * Load a user's files from AWS endpoint given their public key.
+ *
+ * @param userPublicKey - Public key of user to retrieve files for.
+ * @returns Array of files.
+ */
+export const getRegistryFromAWS = async (
+  userPublicAddress: string,
+): Promise<ArweavePayload[]> => {
+  const response = await fetch(
+    `${AWS_API_ENDPOINT}/passwords?tagName=ID&tagValue=${userPublicAddress}`,
+  ).then((res) => res.json());
+  // Data needs to be parsed from the stringified version.
+  if (response?.data) {
+    return response.data.map((item: string) => JSON.parse(item));
+  }
+  return [];
+};
+
+/**
  * Get a list of transactions given the user's public MetaMask key.
  *
  * @param userPublicKey - User's public MetaMask key.

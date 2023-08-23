@@ -86,34 +86,35 @@ export const postUploadBatchToStorage = async (
       message: 'failed',
       transaction: { message: 'At least one upload failed' },
     };
-  }
-  let tx: any;
-  try {
-    await fetch(`${ETHSIGN_API_URL}/uploadBatch`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ batchedUploads: data }),
-    })
-      .then((res) => res.json())
-      .then((response) => {
-        tx = { message: 'success', transaction: response };
+  } else {
+    let tx: any;
+    try {
+      await fetch(`${ETHSIGN_API_URL}/uploadBatch`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ batchedUploads: data }),
       })
-      .catch((err) => {
-        tx = {
-          message: 'failed',
-          transaction: err as any,
-        };
-      });
-  } catch (err) {
-    tx = {
-      message: 'failed',
-      transaction: err as any,
-    };
-  }
+        .then((res) => res.json())
+        .then((response) => {
+          tx = { message: 'success', transaction: response };
+        })
+        .catch((err) => {
+          tx = {
+            message: 'failed',
+            transaction: err as any,
+          };
+        });
+    } catch (err) {
+      tx = {
+        message: 'failed',
+        transaction: err as any,
+      };
+    }
 
-  return tx as any;
+    return tx as any;
+  }
 };
 
 export const fetchTxOnArweave = async (
