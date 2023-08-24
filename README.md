@@ -1,78 +1,363 @@
-# @metamask/template-snap-monorepo
+# EthSign Keychain
 
-This repository demonstrates how to develop a snap with TypeScript. For detailed instructions, see [the MetaMask documentation](https://docs.metamask.io/guide/snaps.html#serving-a-snap-to-your-local-environment).
+EthSign Keychain is a password manager encrypted by BIP-44 entropy generated from your seed phrase. State-keeping outside of MetaMask is optional and delegated to Arweave or AWS to enable decentralized cross-device synchronization.
 
-MetaMask Snaps is a system that allows anyone to safely expand the capabilities of MetaMask. A _snap_ is a program that we run in an isolated environment that can customize the wallet experience.
+EthSign Keychain consists of two parts:
 
-## Snaps is pre-release software
+- Snap: used to encrypt & save passwords and retrieve & decrypt passwords. The local state is stored within MetaMask, and the remote state is optionally stored on AWS or Arweave.
+- Companion extension or API: as MetaMask Snaps are entirely reactive, they need an outside JSON-RPC call to trigger functionality. This is where the companion extension and API come in — aside from recognizing specific fields on a webpage (e.g. `username` and `password`), the extension also triggers the appropriate functions within the Snap. The API can be integrated into 3rd party websites to store and retrieve unique key/value pairs.
 
-To interact with (your) Snaps, you will need to install [MetaMask Flask](https://metamask.io/flask/), a canary distribution for developers that provides access to upcoming features.
+# Entry & State Data Models
 
-## Getting Started
+```tsx
+enum RemoteLocation {
+  ARWEAVE,
+  AWS,
+  NONE,
+}
 
-Clone the template-snap repository [using this template](https://github.com/MetaMask/template-snap-monorepo/generate) and setup the development environment:
+type EthSignKeychainBase {
+	address?: string;
+  timestamp: number;
+}
 
-```shell
-yarn install && yarn start
+type EthSignKeychainConfig = {
+  encryptionMethod: string; // currently only "BIP-44"
+} & EthSignKeychainBase;
+
+type EthSignKeychainRegistry = {
+  publicAddress: string;
+  publicKey: string;
+  timestamp: number;
+};
+
+type EthSignKeychainEntry = {
+  url: string;
+  username: string;
+  password: string;
+  controlled: string | null;
+} & EthSignKeychainBase;
+
+type EthSignKeychainPasswordState = {
+  timestamp: number;
+  neverSave: boolean;
+  logins: EthSignKeychainEntry[];
+};
+
+type EthSignKeychainState = {
+  config: EthSignKeychainConfig;
+  pwState: {
+    [key: string]: EthSignKeychainPasswordState;
+  }; // unencrypted
+  pendingEntries: {
+    type: string,
+    payload: EthSignKeychainEntry
+  }[]; // entries pending sync with Arweave if the network fails
+  credentialAccess: { [origin: string]: boolean };
+  password: string | null;
+  remoteLocation: RemoteLocation | null;
+} & EthSignKeychainBase;
 ```
 
-## Cloning
+# Arweave File Entry Types
 
-This repository contains GitHub Actions that you may find useful, see `.github/workflows` and [Releasing & Publishing](https://github.com/MetaMask/template-snap-monorepo/edit/main/README.md#releasing--publishing) below for more information.
+```tsx
+/*
+ * Files are in this format:
+ * {
+ *   type: string;
+ *   payload: Object;
+ * }
+ */
+```
 
-If you clone or create this repository outside the MetaMask GitHub organization, you probably want to run `./scripts/cleanup.sh` to remove some files that will not work properly outside the MetaMask GitHub organization.
+## `pwStateClear`
 
-Note that the `action-publish-release.yml` workflow contains a step that publishes the frontend of this snap (contained in the `public/` directory) to GitHub pages. If you do not want to publish the frontend to GitHub pages, simply remove the step named "Publish to GitHub Pages" in that workflow.
+```tsx
+/*
+ * payload: {
+ *   url: string;
+ *   timestamp: number;
+ * }
+ */
+```
 
-If you don't wish to use any of the existing GitHub actions in this repository, simply delete the `.github/workflows` directory.
+Description:
 
-## Contributing
+- Clears all passwords from a given website.
 
-### Testing and Linting
+## `pwStateDel`
 
-Run `yarn test` to run the tests once.
+```tsx
+/*
+ * payload: {
+ *   url: string;
+ *   username: string;
+ *   timestamp: number;
+ * }
+ */
+```
 
-Run `yarn lint` to run the linter, or run `yarn lint:fix` to run the linter and fix any automatically fixable issues.
+Description:
 
-### Releasing & Publishing
+- Attempts to remove a password entry from a website.
 
-The project follows the same release process as the other libraries in the MetaMask organization. The GitHub Actions [`action-create-release-pr`](https://github.com/MetaMask/action-create-release-pr) and [`action-publish-release`](https://github.com/MetaMask/action-publish-release) are used to automate the release process; see those repositories for more information about how they work.
+## `pwStateNeverSaveSet`
 
-1. Choose a release version.
+```tsx
+/*
+ * payload: {
+ *   url: string;
+ *   neverSave: boolean;
+ *   timestamp: number;
+ * }
+ */
+```
 
-- The release version should be chosen according to SemVer. Analyze the changes to see whether they include any breaking changes, new features, or deprecations, then choose the appropriate SemVer version. See [the SemVer specification](https://semver.org/) for more information.
+Description:
 
-2. If this release is backporting changes onto a previous release, then ensure there is a major version branch for that version (e.g. `1.x` for a `v1` backport release).
+- Sets neverSave on a password state. Clears the list of logins if neverSave is set to true.
 
-- The major version branch should be set to the most recent release with that major version. For example, when backporting a `v1.0.2` release, you'd want to ensure there was a `1.x` branch that was set to the `v1.0.1` tag.
+## `pwStateSet`
 
-3. Trigger the [`workflow_dispatch`](https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_dispatch) event [manually](https://docs.github.com/en/actions/managing-workflow-runs/manually-running-a-workflow) for the `Create Release Pull Request` action to create the release PR.
+```tsx
+/*
+ * payload: {
+ *   url: string;
+ *   username: string;
+ *   password: string;
+ *   controlled: boolean;
+ *   timestamp: number;
+ * }
+ */
+```
 
-- For a backport release, the base branch should be the major version branch that you ensured existed in step 2. For a normal release, the base branch should be the main branch for that repository (which should be the default value).
-- This should trigger the [`action-create-release-pr`](https://github.com/MetaMask/action-create-release-pr) workflow to create the release PR.
+Description:
 
-4. Update the changelog to move each change entry into the appropriate change category ([See here](https://keepachangelog.com/en/1.0.0/#types) for the full list of change categories, and the correct ordering), and edit them to be more easily understood by users of the package.
+- Creates or updates a username/password entry for a given website.
 
-- Generally any changes that don't affect consumers of the package (e.g. lockfile changes or development environment changes) are omitted. Exceptions may be made for changes that might be of interest despite not having an effect upon the published package (e.g. major test improvements, security improvements, improved documentation, etc.).
-- Try to explain each change in terms that users of the package would understand (e.g. avoid referencing internal variables/concepts).
-- Consolidate related changes into one change entry if it makes it easier to explain.
-- Run `yarn auto-changelog validate --rc` to check that the changelog is correctly formatted.
+## `config`
 
-5. Review and QA the release.
+```tsx
+/*
+ * payload: {
+ *   address: string;
+ *   encryptionMethod: string;
+ *   timestamp: number;
+ * }
+ */
+```
 
-- If changes are made to the base branch, the release branch will need to be updated with these changes and review/QA will need to restart again. As such, it's probably best to avoid merging other PRs into the base branch while review is underway.
+Description:
 
-6. Squash & Merge the release.
+- Updates the config object for the EthSignKeychainState.
 
-- This should trigger the [`action-publish-release`](https://github.com/MetaMask/action-publish-release) workflow to tag the final release commit and publish the release on GitHub.
+## `registry`
 
-7. Publish the release on npm.
+```tsx
+/*
+ * payload: {
+ *   publicAddress: string;
+ *   publicKey: string;
+ *   timestamp: number;
+ * }
+ */
+```
 
-- Be very careful to use a clean local environment to publish the release, and follow exactly the same steps used during CI.
-- Use `npm publish --dry-run` to examine the release contents to ensure the correct files are included. Compare to previous releases if necessary (e.g. using `https://unpkg.com/browse/[package name]@[package version]/`).
-- Once you are confident the release contents are correct, publish the release using `npm publish`.
+Description:
 
-## Notes
+- Updates the registry object for the EthSignKeychainState.
 
-- Babel is used for transpiling TypeScript to JavaScript, so when building with the CLI,
-  `transpilationMode` must be set to `localOnly` (default) or `localAndDeps`.
+# Snap
+
+## `sync`
+
+Description:
+
+- Retrieves all remote event files from Arweave and uses them to validate the local state and build a complete remote state object. Compares the updated local state with the remote state, adding pending entries for any changes in the local state that are not found in the remote state. Attempts to upload pending entries to Arweave.
+
+Given:
+
+- N/A
+
+Returns:
+
+- “OK” upon RPC completed.
+
+## `set_sync_to`
+
+Description:
+
+- Update the remote sync location of a given state object following a MetaMask confirmation popup.
+
+Given:
+
+- data: String consisting of “aws”, “arweave”, or “none” representing the new sync location.
+
+Returns:
+
+- String consisting of the new sync location.
+
+## `get_sync_to`
+
+Description:
+
+- Get the remote sync location.
+
+Given:
+
+- N/A
+
+Returns:
+
+- String consisting of “aws”, “arweave”, or “none” representing the remote sync location.
+
+## `set_neversave`
+
+Description:
+
+- Set whether or not we should prompt to save passwords for a given website. Adds a pending entry that attempts an upload to Arweave.
+
+Given:
+
+- website: Website for which we are updating the neverSave state.
+- neverSave: A boolean value representing whether or not to save passwords for the current website.
+
+Returns:
+
+- “OK” upon RPC completed.
+
+## `set_password`
+
+Description:
+
+- Receives a website, username, and password and saves the entry to the local state with the current timestamp. Adds a pending entry that attempts an upload to Arweave.
+
+Given:
+
+- website: Website we are updating the password on.
+- username: Username we are setting.
+- password: Password we are setting.
+
+Returns:
+
+- “OK” upon RPC completed.
+
+## `get_password`
+
+Description:
+
+- Returns the local password state for a provided website.
+
+Given:
+
+- website: The website URL we are fetching a password state for.
+
+Returns:
+
+- EthSignKeychainPasswordState for the provided website
+
+## `remove_password`
+
+Description:
+
+- Removes a password from the local state given a website and the associated username. If an entry is found, the entry is removed locally and a pending entry is created. It attempts to upload the pending entry to Arweave.
+
+Given:
+
+- website: The website URL whose state we are trying to remove a password entry from.
+- username: The username associated with the password entry we are attempting to remove.
+
+Returns:
+
+- “OK” upon RPC completed.
+
+## `registry`
+
+Description:
+
+- Retrieves the registry information for a given wallet address, which includes the wallet’s address and public key.
+
+Given:
+
+- address: A string that contains a wallet address.
+
+Returns:
+
+- { publicAddress: string, publicKey: string } for the provided address
+
+## `encrypt`
+
+Description:
+
+- Encrypt a string using a receiver's public key. Fails if the receiver's public key cannot be located.
+
+Given:
+
+- address: Address of the receiver that can decrypt the message using their private key.
+- data: String payload to be encrypted.
+
+Returns:
+
+- { success: boolean, data?: string, message?: string }
+
+## `decrypt`
+
+Description:
+
+- Decrypts a hex string using the current user's private key.
+
+Given:
+
+- data: String payload to be decrypted.
+
+Returns:
+
+- { success: boolean, data?: string, message?: string }
+
+## `export`
+
+Description:
+
+- Export the password state from the current EthSignKeychainState stored locally. Requires the user to enter a password for encryption in a MetaMask popup.
+
+Given:
+
+- N/A
+
+Returns:
+
+- { success: boolean, data?: string, message?: string }
+
+## `import`
+
+Description:
+
+- Import a user's credential state, which was encrypted and exported into a JSON object containing nonce and data strings. Requires the user to enter a password for decryption in a MetaMask popup. Will ask the user to choose between merging and replacing their local state, if one exists.
+
+Given:
+
+- data: String containing a JSON object with nonce and data entries.
+
+Returns:
+
+- { success: boolean, message?: string }
+
+# Companion Extension
+
+The companion extension is used to detect usernames & passwords from the webpages, prompt saving them or auto-filling them, and interact with Snap via JSON-RPC calls to provide an interface to view & edit entries, manually synchronize, and else.
+
+### Features
+
+- Form submission detection which finds most single-step login and signup forms.
+- Banners that appear on form submission to quickly and easily save new or updated credentials, or choose to never save passwords for a given site.
+- Login form autofill capabilities.
+- Manually trigger a sync with remote password entries from Arweave or AWS.
+- Easy UX flow for exporting and importing password states into the keychain snap.
+- Manually add, edit, and delete password entries from the keychain.
+- Easily visualize all password credentials for the current site.
+- Disable remote syncing, or change the keychain snap’s remote syncing location between AWS and Arweave.
+
+# Companion API
+
+The companion API provides full access to all snap features and functionalities. It is provided as an NPM package that can be installed by running `npm i keychain-api`. API usage is documented in the package’s readme, located at https://github.com/EthSign/keychain-api.

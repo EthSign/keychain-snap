@@ -12185,6 +12185,32 @@ __metadata:
   languageName: node
   linkType: hard
 
+"keychain-base@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "keychain-base@workspace:."
+  dependencies:
+    "@metamask/eslint-config": ^10.0.0
+    "@metamask/eslint-config-jest": ^10.0.0
+    "@metamask/eslint-config-nodejs": ^10.0.0
+    "@metamask/eslint-config-typescript": ^10.0.0
+    "@types/crypto-js": ^4.1.1
+    "@typescript-eslint/eslint-plugin": ^5.33.0
+    "@typescript-eslint/parser": ^5.33.0
+    eslint: ^8.21.0
+    eslint-config-prettier: ^8.1.0
+    eslint-plugin-import: ^2.26.0
+    eslint-plugin-jest: ^26.8.2
+    eslint-plugin-jsdoc: ^39.2.9
+    eslint-plugin-node: ^11.1.0
+    eslint-plugin-prettier: ^4.2.1
+    ethers: 5.7.2
+    lodash: ^4.17.21
+    prettier: ^2.2.1
+    prettier-plugin-packagejson: ^2.2.18
+    typescript: ^4.7.4
+  languageName: unknown
+  linkType: soft
+
 "keychain-snap@workspace:packages/snap":
   version: 0.0.0-use.local
   resolution: "keychain-snap@workspace:packages/snap"
@@ -12216,32 +12242,6 @@ __metadata:
     prettier-plugin-packagejson: ^2.2.11
     rimraf: ^3.0.2
     tweetnacl: ^1.0.3
-    typescript: ^4.7.4
-  languageName: unknown
-  linkType: soft
-
-"keychain-test@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "keychain-test@workspace:."
-  dependencies:
-    "@metamask/eslint-config": ^10.0.0
-    "@metamask/eslint-config-jest": ^10.0.0
-    "@metamask/eslint-config-nodejs": ^10.0.0
-    "@metamask/eslint-config-typescript": ^10.0.0
-    "@types/crypto-js": ^4.1.1
-    "@typescript-eslint/eslint-plugin": ^5.33.0
-    "@typescript-eslint/parser": ^5.33.0
-    eslint: ^8.21.0
-    eslint-config-prettier: ^8.1.0
-    eslint-plugin-import: ^2.26.0
-    eslint-plugin-jest: ^26.8.2
-    eslint-plugin-jsdoc: ^39.2.9
-    eslint-plugin-node: ^11.1.0
-    eslint-plugin-prettier: ^4.2.1
-    ethers: 5.7.2
-    lodash: ^4.17.21
-    prettier: ^2.2.1
-    prettier-plugin-packagejson: ^2.2.18
     typescript: ^4.7.4
   languageName: unknown
   linkType: soft
