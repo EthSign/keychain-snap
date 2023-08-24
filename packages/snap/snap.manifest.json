@@ -4,10 +4,10 @@
   "proposedName": "EthSign Keychain",
   "repository": {
     "type": "git",
-    "url": "https://github.com/EthSign/keychain-snap"
+    "url": "https://github.com/EthSign/keychain-snap.git"
   },
   "source": {
-    "shasum": "pJ+8LUXvoXjMAwR9Ykjz6ps7xxHE3X+fmTR8yqFNBGk=",
+    "shasum": "y0HHBLstxsJvA8vN+wHw0Ds6XV8ISJWl3cXpA0Cpi0o=",
     "location": {
       "npm": {
         "filePath": "dist/bundle.js",

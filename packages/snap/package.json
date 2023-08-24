@@ -4,7 +4,7 @@
   "description": "EthSign Keychain Snap",
   "repository": {
     "type": "git",
-    "url": "https://github.com/EthSign/keychain-snap"
+    "url": "https://github.com/EthSign/keychain-snap.git"
   },
   "license": "(MIT-0 OR Apache-2.0)",
   "author": {
