@@ -381,7 +381,7 @@ const getFilesFromAWS = async (
 /**
  * Load a user's files from AWS endpoint given their public key.
  *
- * @param userPublicKey - Public key of user to retrieve files for.
+ * @param userPublicAddress - Public address of user to retrieve files for.
  * @returns Array of files.
  */
 export const getRegistryFromAWS = async (
