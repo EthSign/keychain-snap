@@ -8,12 +8,13 @@ import {
   postUploadBatchToStorage,
   postUploadToStorage,
 } from './misc/storage';
-import { ArweavePayload, StoragePayload } from './types';
+import { ArweavePayload, RemoteLocation, StoragePayload } from './types';
 import {
   generateNonce,
   stringToUint8Array,
   uint8ArrayToString,
 } from './misc/binary';
+import { AWS_API_ENDPOINT } from './constants';
 import { EthSignKeychainState, EthSignKeychainEntry } from '.';
 
 /**
@@ -21,12 +22,14 @@ import { EthSignKeychainState, EthSignKeychainEntry } from '.';
  *
  * @param object - JSON object to encrypt.
  * @param object.timestamp - Timestamp used for encryption nonce creation. Current timestamp used if object.timestamp is 0.
- * @param key - Key used to encrypt the password.
+ * @param privateKey - Key used to encrypt the password.
+ * @param password - User's password. Can be null.
  * @returns Encrypted UTF-8 string of the object.
  */
 export const getEncryptedStringFromBuffer = (
   object: { timestamp: number; [key: string]: any },
-  key: string,
+  privateKey: string,
+  password: string | null,
 ): string => {
   if (!object.timestamp && object.timestamp !== 0) {
     throw new Error('Error encrypting object. Timestamp not available.');
@@ -34,11 +37,32 @@ export const getEncryptedStringFromBuffer = (
   const nonce = generateNonce(
     object.timestamp === 0 ? Math.floor(Date.now() / 1000) : object.timestamp,
   );
-  const encryptedString = nacl.secretbox(
+  // First layer of encryption is based on the user's private key
+  let key = privateKey;
+  let encryptedString = nacl.secretbox(
     Buffer.from(JSON.stringify(object)),
     nonce,
     Uint8Array.from(Buffer.from(key.substring(2), 'hex')),
   );
+
+  // Second (optional) layer of encryption is based on the user's entered password
+  if (password) {
+    key = createHash('sha256')
+      .update(
+        JSON.stringify({
+          key: privateKey,
+          password,
+          nonce: uint8ArrayToString(nonce),
+        }),
+      )
+      .digest('hex');
+
+    encryptedString = nacl.secretbox(
+      encryptedString,
+      nonce,
+      Uint8Array.from(Buffer.from(key, 'hex')),
+    );
+  }
   return JSON.stringify({
     nonce: uint8ArrayToString(nonce),
     data: uint8ArrayToString(encryptedString),
@@ -49,18 +73,42 @@ export const getEncryptedStringFromBuffer = (
  * Decrypt an encrypted string using the provided key.
  *
  * @param encryptedString - Encrypted string to decrypt.
- * @param key - Key used to decrypt the string.
+ * @param privateKey - Key used to decrypt the string.
+ * @param password - User's password. Can be null.
  * @returns JSON object representing the decrypted string.
  */
 export const decryptDataArrayFromString = (
   encryptedString: string,
-  key = '',
+  privateKey: string,
+  password: string | null,
 ): EthSignKeychainState | undefined => {
   try {
     const obj = JSON.parse(encryptedString);
+
+    // Decrypt second (optional) layer of encryption based on user's entered password
+    let buffer: Uint8Array | null = stringToUint8Array(obj.data);
+    let key = privateKey;
+    if (password) {
+      key = createHash('sha256')
+        .update(JSON.stringify({ key: privateKey, password, nonce: obj.nonce }))
+        .digest('hex');
+      const tmpBuf = nacl.secretbox.open(
+        buffer,
+        stringToUint8Array(obj.nonce),
+        Uint8Array.from(Buffer.from(key, 'hex')),
+      );
+      // In case an entry is not dual-encrypted (decryption failed), we will leave the buffer alone
+      // and try to decrypt again using just the user's private key.
+      if (tmpBuf) {
+        buffer = tmpBuf;
+      }
+    }
+
+    // Decrypt first layer of encryption based on user's private key
+    key = privateKey;
     let decrypted: EthSignKeychainState | null | undefined = null;
-    const buffer = nacl.secretbox.open(
-      stringToUint8Array(obj.data),
+    buffer = nacl.secretbox.open(
+      buffer,
       stringToUint8Array(obj.nonce),
       Uint8Array.from(Buffer.from(key.substring(2), 'hex')),
     );
@@ -101,14 +149,18 @@ export const verifyRegistrySignature = (
 /**
  * Get the transaction response as a string given the user's public key, private key, and a list of decrypted entries.
  *
+ * @param remoteLocation - The RemoteLocation we are uploading entries to.
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
+ * @param password - User's password. Can be null.
  * @param entries - List of entries to parse.
  * @returns Transaction response JSON in a string format.
  */
 export const getTransactionIdFromStorageUploadBatch = async (
+  remoteLocation: RemoteLocation,
   userPublicKey: string,
   userPrivateKey: string,
+  password: string | null,
   entries: { type: string; payload: any }[],
 ): Promise<string> => {
   const batchedUploads: StoragePayload[] = [];
@@ -136,12 +188,17 @@ export const getTransactionIdFromStorageUploadBatch = async (
       encPayload = JSON.stringify({ ...entry.payload, signature, message });
       tags.push({ name: 'ID', value: entry.payload.publicAddress ?? '' });
     } else {
-      encPayload = getEncryptedStringFromBuffer(entry.payload, userPrivateKey);
+      encPayload = getEncryptedStringFromBuffer(
+        entry.payload,
+        userPrivateKey,
+        password,
+      );
     }
 
+    const timestampIso = new Date().toISOString();
     const messagePayload = {
       publicKey: userPublicKey,
-      timestamp: new Date().toISOString(),
+      timestamp: timestampIso,
       version: '0.1',
       hash: createHash('sha256')
         .update(
@@ -179,13 +236,19 @@ export const getTransactionIdFromStorageUploadBatch = async (
       }),
       tags,
       shouldVerify: true,
+      timestamp:
+        remoteLocation === RemoteLocation.AWS ? timestampIso : undefined,
     };
     batchedUploads.push(storagePayload);
   }
 
   // Response format:
   // { message: string; transaction: { transactions: { itemId: string; size: number }[]; message: string } }
-  const response: any = await postUploadBatchToStorage(batchedUploads);
+  const response: any = await postUploadBatchToStorage(
+    remoteLocation,
+    batchedUploads,
+    userPublicKey,
+  );
 
   return JSON.stringify(response);
 };
@@ -193,15 +256,19 @@ export const getTransactionIdFromStorageUploadBatch = async (
 /**
  * Get the transaction ID as a StorageResponse after uploading the payload to Arweave.
  *
+ * @param remoteLocation - The RemoteLocation we are uploading entries to.
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
+ * @param password - User's password. Can be null.
  * @param type - Type of entry we are parsing.
  * @param payload - Payload of entry we need to parse.
  * @returns StorageResponse in a string format.
  */
 export const getTransactionIdFromStorageUpload = async (
+  remoteLocation: RemoteLocation,
   userPublicKey: string,
   userPrivateKey: string,
+  password: string | null,
   type:
     | 'pwStateNeverSaveSet'
     | 'pwStateClear'
@@ -234,7 +301,11 @@ export const getTransactionIdFromStorageUpload = async (
     encPayload = JSON.stringify({ ...payload, signature, message });
     tags.push({ name: 'ID', value: payload.publicAddress ?? '' });
   } else {
-    encPayload = getEncryptedStringFromBuffer(payload, userPrivateKey);
+    encPayload = getEncryptedStringFromBuffer(
+      payload,
+      userPrivateKey,
+      password,
+    );
   }
 
   const messagePayload = {
@@ -279,9 +350,51 @@ export const getTransactionIdFromStorageUpload = async (
     shouldVerify: true,
   };
 
-  const response: any = await postUploadToStorage(storagePayload);
+  const response: any = await postUploadToStorage(
+    remoteLocation,
+    storagePayload,
+    userPublicKey,
+  );
 
   return JSON.stringify(response);
+};
+
+/**
+ * Load a user's files from AWS endpoint given their public key.
+ *
+ * @param userPublicKey - Public key of user to retrieve files for.
+ * @returns Array of files.
+ */
+const getFilesFromAWS = async (
+  userPublicKey: string,
+): Promise<ArweavePayload[]> => {
+  const response = await fetch(
+    `${AWS_API_ENDPOINT}/users/pk_${userPublicKey}/passwords`,
+  ).then((res) => res.json());
+  // Data needs to be parsed from the stringified version.
+  if (response?.data) {
+    return response.data.map((item: string) => JSON.parse(item));
+  }
+  return [];
+};
+
+/**
+ * Load a user's files from AWS endpoint given their public key.
+ *
+ * @param userPublicAddress - Public address of user to retrieve files for.
+ * @returns Array of files.
+ */
+export const getRegistryFromAWS = async (
+  userPublicAddress: string,
+): Promise<ArweavePayload[]> => {
+  const response = await fetch(
+    `${AWS_API_ENDPOINT}/passwords?tagName=ID&tagValue=${userPublicAddress}`,
+  ).then((res) => res.json());
+  // Data needs to be parsed from the stringified version.
+  if (response?.data) {
+    return response.data.map((item: string) => JSON.parse(item));
+  }
+  return [];
 };
 
 /**
@@ -384,29 +497,46 @@ export const getObjectsFromCache = async (
   return objects;
 };
 
+/**
+ * Get files for a user at a given remote location.
+ *
+ * @param userPublicKey - User's public key to retrieve files for.
+ * @param remoteLocation - Location to retrieve files from.
+ * @returns List of files.
+ */
 export const getFilesForUser = async (
   userPublicKey: string,
+  remoteLocation: RemoteLocation | null,
 ): Promise<ArweavePayload[]> => {
   // Generate a node list for all of the password state entries we need to parse from Arweave and Redis
-  const nodeList: {
+  let nodeList: {
     cursor: string;
     node: { id: string; block?: { height: number }; timestamp?: number };
-  }[] = (await getObjectIdFromStorage(userPublicKey)).concat(
-    await getObjectsFromCache(userPublicKey),
-  );
+  }[] = [];
+  if (remoteLocation === RemoteLocation.ARWEAVE) {
+    nodeList = (await getObjectIdFromStorage(userPublicKey)).concat(
+      await getObjectsFromCache(userPublicKey),
+    );
 
-  // No nodes to parse (empty state)
-  if (!nodeList || nodeList.length === 0) {
-    return [];
+    // No nodes to parse (empty state)
+    if (!nodeList || nodeList.length === 0) {
+      return [];
+    }
+
+    // Get ids for all of the nodes we need to parse
+    const idList = nodeList.map((node) => node.node.id);
+
+    // Retrieve all files from arweave given the node idList
+    const files = await batchFetchTxOnArweave(idList);
+
+    return files;
+  } else if (remoteLocation === RemoteLocation.AWS || remoteLocation === null) {
+    // Get node list (or list of payloads) directly from AWS
+    const files = await getFilesFromAWS(userPublicKey);
+    return files;
   }
 
-  // Get ids for all of the nodes we need to parse
-  const idList = nodeList.map((node) => node.node.id);
-
-  // Retrieve all files from arweave given the node idList
-  const files = await batchFetchTxOnArweave(idList);
-
-  return files;
+  return [];
 };
 
 /**
@@ -432,6 +562,7 @@ const isValidMessage = (payload: any) => {
  * @param userPublicKey - User's public MetaMask key.
  * @param userPrivateKey - User's private MetaMask key.
  * @param userAddress - Address for validating unencrypted registry entries.
+ * @param password - User's password. Can be null.
  * @param startingState - The EthSignKeychainState to start building on.
  * @returns List of objects from Arweave and Redis.
  */
@@ -440,6 +571,7 @@ export const getObjectsFromStorage = async (
   userPublicKey: string,
   userPrivateKey: string,
   userAddress: string,
+  password: string | null,
   startingState = {
     config: {
       address: userPublicKey,
@@ -456,6 +588,9 @@ export const getObjectsFromStorage = async (
     address: userPublicKey,
     timestamp: 0,
     credentialAccess: {},
+    password: null,
+    remoteLocation: null,
+    awsInitFailure: null,
   } as EthSignKeychainState,
 ): Promise<any | undefined> => {
   // Decrypt each payload using user's private key and build our local keychain state
@@ -480,7 +615,7 @@ export const getObjectsFromStorage = async (
           isValidMessage(file.payload)
           ? JSON.parse(file.payload)
           : undefined
-        : decryptDataArrayFromString(file.payload, userPrivateKey);
+        : decryptDataArrayFromString(file.payload, userPrivateKey, password);
 
     if (!payload) {
       continue;

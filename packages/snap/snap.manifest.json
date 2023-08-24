@@ -1,5 +1,5 @@
 {
-  "version": "0.3.0",
+  "version": "0.3.4",
   "description": "Password manager.",
   "proposedName": "EthSign Keychain",
   "repository": {
@@ -7,7 +7,7 @@
     "url": "https://github.com/EthSign/keychain-snap.git"
   },
   "source": {
-    "shasum": "y0HHBLstxsJvA8vN+wHw0Ds6XV8ISJWl3cXpA0Cpi0o=",
+    "shasum": "aL3ms2yZ4REDLEVMVTXapo0CjmwmSw60f23/ZUQMaCA=",
     "location": {
       "npm": {
         "filePath": "dist/bundle.js",
@@ -24,11 +24,7 @@
       "snaps": false
     },
     "snap_manageState": {},
-    "snap_getBip44Entropy": [
-      {
-        "coinType": 60
-      }
-    ],
+    "snap_getEntropy": {},
     "endowment:network-access": {}
   },
   "manifestVersion": "0.1"

@@ -15,12 +15,20 @@ export type StoragePayload = {
   data: string;
   tags: { name: string; value: string }[];
   shouldVerify?: boolean;
+  timestamp?: string;
 };
 
 export type StorageResponse = {
   input?: unknown;
   message: string;
   transaction: {
-    itemId: string;
+    message?: string;
+    itemId?: string;
   };
 };
+
+export enum RemoteLocation {
+  ARWEAVE,
+  AWS,
+  NONE,
+}

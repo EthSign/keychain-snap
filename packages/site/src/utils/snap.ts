@@ -62,7 +62,7 @@ export const sendSet = async () => {
       request: {
         method: 'set_password',
         params: {
-          website: 'localhost:8000',
+          website: 'http://localhost:8000',
           username: 'username',
           password: 'password',
         },
@@ -78,7 +78,7 @@ export const sendGet = async () => {
       snapId: defaultSnapOrigin,
       request: {
         method: 'get_password',
-        params: { website: 'localhost:8000' },
+        params: { website: 'http://localhost:8000' },
       },
     },
   });
@@ -143,7 +143,7 @@ export const sendEncrypt = async (): Promise<any> => {
       request: {
         method: 'encrypt',
         params: {
-          address: '0x11ee0cf7235Cb595f68e586E8727287aC2BE540A',
+          address: '0x4eA8F16caf796Ca7F7D1BfC95B9C39648e19DFD7',
           data: 'this is a test',
         },
       },
@@ -172,6 +172,43 @@ export const sendRegistry = async (address: string) => {
       request: {
         method: 'registry',
         params: { address },
+      },
+    },
+  });
+};
+
+export const sendExportState = async () => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'export',
+      },
+    },
+  });
+};
+
+export const sendSetSyncTo = async () => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'set_sync_to',
+        params: { data: 'AWS' },
+      },
+    },
+  });
+};
+
+export const sendGetSyncTo = async () => {
+  return await window.ethereum.request({
+    method: 'wallet_invokeSnap',
+    params: {
+      snapId: defaultSnapOrigin,
+      request: {
+        method: 'get_sync_to',
       },
     },
   });

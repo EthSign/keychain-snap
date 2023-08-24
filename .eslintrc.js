@@ -4,7 +4,7 @@ module.exports = {
     sourceType: 'module',
   },
 
-  extends: ['@metamask/eslint-config'],
+  extends: ['@metamask/eslint-config', 'prettier/prettier'],
 
   overrides: [
     {
@@ -37,6 +37,11 @@ module.exports = {
       },
     },
   ],
+
+  rules: {
+    'require-atomic-updates': 0,
+    'no-nested-ternary': 0,
+  },
 
   ignorePatterns: [
     '!.prettierrc.js',
