@@ -91,7 +91,7 @@ export const sendRemove = async () => {
       snapId: defaultSnapOrigin,
       request: {
         method: 'remove_password',
-        params: { website: 'localhost:8000', username: 'username' },
+        params: { website: 'http://localhost:8000', username: 'username' },
       },
     },
   });
@@ -104,7 +104,7 @@ export const sendSetNeverSaveClick = async () => {
       snapId: defaultSnapOrigin,
       request: {
         method: 'set_neversave',
-        params: { website: 'localhost:8000', neverSave: true },
+        params: { website: 'http://localhost:8000', neverSave: true },
       },
     },
   });
