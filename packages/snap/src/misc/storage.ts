@@ -68,11 +68,12 @@ export const postUploadBatchToStorage = async (
     if (!userPublicKey) {
       return undefined;
     }
+
     // Only upload up to 50 entries per request and set a 10s delay between requests.
     // AWS is programmed to allow a new request every 7 seconds, but the 10s delay
     // will account for any network delays or processing delays.
     for (let i = 0; i < Math.ceil(data.length / 50); i++) {
-      const res = await new Promise((resolve) => {
+      const cont = await new Promise((resolve) => {
         setTimeout(
           async () => {
             const response = await fetch(
@@ -95,7 +96,7 @@ export const postUploadBatchToStorage = async (
           i === 0 ? 0 : 10000,
         );
       });
-      if (!res) {
+      if (!cont) {
         return {
           message: 'failed',
           transaction: { message: 'At least one upload failed' },
