@@ -68,24 +68,41 @@ export const postUploadBatchToStorage = async (
     if (!userPublicKey) {
       return undefined;
     }
-    const response = await fetch(
-      `${AWS_API_ENDPOINT}/users/pk_${userPublicKey}/passwords/batch`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ batchedUploads: data }),
-      },
-    ).then((res) => res.json());
-    if (response?.error?.failures?.length === 0) {
-      // At least one failed.
-      return { message: 'success', transaction: { message: 'success' } };
+    // Only upload up to 50 entries per request and set a 10s delay between requests.
+    // AWS is programmed to allow a new request every 7 seconds, but the 10s delay
+    // will account for any network delays or processing delays.
+    for (let i = 0; i < Math.ceil(data.length / 50); i++) {
+      const res = await new Promise((resolve) => {
+        setTimeout(
+          async () => {
+            const response = await fetch(
+              `${AWS_API_ENDPOINT}/users/pk_${userPublicKey}/passwords/batch`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  batchedUploads: data.slice(i * 50, (i + 1) * 50),
+                }),
+              },
+            ).then((res) => res.json());
+            if (response?.error?.failures?.length > 0) {
+              resolve(false);
+            }
+            resolve(true);
+          },
+          i === 0 ? 0 : 10000,
+        );
+      });
+      if (!res) {
+        return {
+          message: 'failed',
+          transaction: { message: 'At least one upload failed' },
+        };
+      }
     }
-    return {
-      message: 'failed',
-      transaction: { message: 'At least one upload failed' },
-    };
+    return { message: 'success', transaction: { message: 'success' } };
   }
   let tx: any;
   try {

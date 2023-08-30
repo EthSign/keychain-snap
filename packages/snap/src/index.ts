@@ -1299,7 +1299,11 @@ export const onRpcRequest: OnRpcRequestHandler = async ({
   // Grab relevant values from the request params object.
   const address: string = request.params?.address ?? '';
   const data: string = request.params?.data ?? '';
-  const website: string = request.params?.website ?? '';
+  let website: string = request.params?.website ?? '';
+  // Remove trailing slash if present
+  if (website.charAt(website.length - 1) === '/') {
+    website = website.substring(0, website.length - 1);
+  }
   const username: string = request.params?.username ?? '';
   const password: string = request.params?.password ?? '';
   const neverSave: boolean = request.params?.neverSave ?? false;
